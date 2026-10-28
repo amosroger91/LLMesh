@@ -54,3 +54,7 @@ Make LLMesh open directly into a usable AI Companion, automatically contribute n
 ## Next milestone
 
 A tested, clearly labeled internal economy with 10,000-credit grants, full provider payouts, safe fee-free transfers, contributor priority, and an opt-in testnet withdrawal path. Real-money withdrawals remain disabled until their funding/backing requirements are met.
+
+## Agent coordination — 2026-10-28
+
+Created `AGENT_COORDINATION.md` at the owner's request. It introduces this agent, explains project/economy understanding, lists the active dirty files and unfinished interfaces, and records the two current stale-balance test failures. The new ledger provenance/transfer/withdrawal-hold draft is not yet release-ready; no live withdrawal has occurred. Other agents can append their identity, ownership, and progress there before overlapping edits.
