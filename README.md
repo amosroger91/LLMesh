@@ -321,3 +321,14 @@ Contributions that improve compatibility, reproducible benchmarks, accessibility
 
 <p align="center"><img src="assets/branding/icon.png" width="64" alt="LLMesh emblem"></p>
 <p align="center"><strong>Build intelligence people can own.</strong></p>
+
+
+### Browser discovery, guest contribution, and optional harvesting
+
+The web app now discovers live browser sessions and desktop gateways through signed, ephemeral Nostr presence advertisements (`relay.damus.io` and `nos.lol`). You do not need a wallet or desktop QR to appear online. The counter includes this session, deduplicates each ephemeral identity across relays, and expires silent sessions after 60 seconds. Separate tabs count separately; this is a view of reachable public advertisements, not a verified worldwide device census. Relay outages can limit discovery.
+
+**Download model & start serving** loads Qwen3.5 0.8B locally and automatically finds a desktop gateway. With **Harvest credits to my desktop account** off (the default), your browser donates compute without holding an account or wallet. An updated desktop must be open to bridge browser workers into the native mesh. Until one is reachable, the browser honestly shows that it is finding a gateway. Guest work is donated to the gateway account; this browser accrues no recoverable balance. Enabling harvesting reveals QR pairing: scan your own desktop, approve it there, and that desktop account receives the earnings from your linked worker. No wallet private key crosses devices. Turning harvesting off disconnects the paired session and returns to guest mode.
+
+Public guest browsers are **external workers**, not trusted devices. They are excluded from `mesh-only` requests both by routing and the browser execution guard. Consumers must select **Allow external workers** (API: `privacy: "allow-third-party"`) to permit community browsers as well as donated provider APIs. The operators of those workers can read prompts they process, even though WebRTC traffic is encrypted. Pair only devices you trust. Public discovery shares ephemeral connection information and availability, never your root account key, API key, or prompt. Desktop public gateway discovery is active while the desktop UI is open; headless public browser discovery is not implemented.
+
+Browser data-channel messages are fragmented below WebRTC message limits, and browser slots advertise their 4096-token context ceiling. This prevents selecting a small browser for requests needing a larger context. Real public-relay discovery was verified with two independent anonymous sessions; the live WebGPU model also loaded successfully on an NVIDIA adapter. Phone-specific inference performance and restrictive NAT traversal still depend on the device/network.

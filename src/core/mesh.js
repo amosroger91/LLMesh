@@ -99,6 +99,8 @@ export class Mesh extends EventEmitter {
       if(info.devices!=null&&(!Array.isArray(info.devices)||info.devices.length>16||!info.devices.every(device=>/^web-[a-f0-9]{64}$/.test(device.id)&&typeof device.name==='string'&&device.name.length<=60&&typeof device.model==='string'&&device.model.length<=100&&typeof device.busy==='boolean')))throw new Error('Invalid linked devices');
       peer.devices=info.devices??[];
       for(const slot of info.slots??[]){
+        if(slot.source!=null&&!['third-party','community'].includes(slot.source))throw new Error('Invalid worker source');
+        if(slot.maxContextTokens!=null&&(!Number.isInteger(slot.maxContextTokens)||slot.maxContextTokens<512||slot.maxContextTokens>32768))throw new Error('Invalid context capability');
         if(slot.source==='third-party'){
           const model=slot.modelInfo;
           if(!model||model.id!==slot.model||!/^donated:[a-z0-9-]{1,80}$/.test(model.id)||!Number.isInteger(model.rank)||model.rank<1||model.rank>5||!Number.isFinite(model.parametersB)||model.parametersB<=0||model.parametersB>10000||typeof model.provider!=='string'||model.provider.length>40||typeof model.upstreamModel!=='string'||model.upstreamModel.length>200||!Number.isSafeInteger(slot.creditBudget)||slot.creditBudget<0||slot.creditBudget>10000000)throw new Error('Invalid donated API capability');
@@ -180,7 +182,7 @@ export class Mesh extends EventEmitter {
         supportsTools:peer.supportsTools,contribution:peer.contribution,wallet:peer.wallet,chainId:peer.chainId,escrow:peer.escrow};
       if(!peer.slots)return [base];
       return peer.slots.map(slot=>({...base,instanceId:slot.id,models:[slot.model],total:slot.total,
-          source:slot.source,creditBudget:slot.creditBudget,modelCatalog:slot.source==='third-party'?[slot.modelInfo]:[],supportsTools:slot.supportsTools,free:Math.max(0,slot.free-(peer.instanceInFlight?.get(slot.id)??0)),busy:slot.free>(peer.instanceInFlight?.get(slot.id)??0)?0:1,
+          maxContextTokens:slot.maxContextTokens,source:slot.source,creditBudget:slot.creditBudget,modelCatalog:slot.source==='third-party'?[slot.modelInfo]:[],supportsTools:slot.supportsTools,free:Math.max(0,slot.free-(peer.instanceInFlight?.get(slot.id)??0)),busy:slot.free>(peer.instanceInFlight?.get(slot.id)??0)?0:1,
         metrics:{[slot.model]:{firstTokenMs:slot.firstTokenMs,tokensPerSecond:slot.tokensPerSecond}}}));
     });
   }

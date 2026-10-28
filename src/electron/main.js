@@ -68,6 +68,7 @@ else {
       service.browserWorkers.register(value.deviceId,value.name);pairing.used=true;
       return {account:service.pubkey,scope:'worker-only'};
     });
+    handle('browser-guest', value => {service.browserWorkers.register(value.deviceId,value.name,true);return {scope:'donation-only'};});
     handle('browser-report', (id,event) => {try{return service.browserWorkers.report(id,event);}catch(error){service.browserWorkers.remove(id);throw error;}});
     handle('browser-remove', id => { emit('browser-send',{deviceId:id,message:{type:'revoked'}});service.browserWorkers.remove(id); });
     service.browserWorkers.on('send', value => emit('browser-send',value));

@@ -24,5 +24,21 @@ export async function secureChannel(local,remote,session,send){
 export async function sendData(connection,body){
   const until=Date.now()+10000;
   while(connection.dataChannel?.bufferedAmount>262144){if(Date.now()>until||!connection.open)throw new Error('Slow/disconnected device');await new Promise(resolve=>setTimeout(resolve,10));}
-  if(!connection.open)throw new Error('Device disconnected');connection.send(body);
+  if(!connection.open)throw new Error('Device disconnected');
+  const serialized=JSON.stringify(body);if(serialized.length>710000)throw new Error('Transport frame too large');
+  if(encoder.encode(serialized).length<=24000){connection.send(body);return;}
+  const id=crypto.randomUUID(),parts=[];
+  for(let offset=0;offset<serialized.length;offset+=8000)parts.push(serialized.slice(offset,offset+8000));
+  for(let index=0;index<parts.length;index++){
+    while(connection.dataChannel?.bufferedAmount>262144){if(Date.now()>until||!connection.open)throw new Error('Slow/disconnected device');await new Promise(resolve=>setTimeout(resolve,10));}
+    connection.send({type:'fragment',id,index,total:parts.length,text:parts[index]});
+  }
+}
+export function reassemble(){let active;
+  return frame=>{if(frame?.type!=='fragment')return frame;
+    if(typeof frame.id!=='string'||frame.id.length>64||!Number.isInteger(frame.index)||!Number.isInteger(frame.total)||frame.total<1||frame.total>90||typeof frame.text!=='string'||frame.text.length>8000)throw new Error('Invalid transport fragment');
+    if(frame.index===0){if(active)throw new Error('Interleaved transport fragments');active={id:frame.id,total:frame.total,parts:[],size:0,started:Date.now()};}
+    if(!active||active.id!==frame.id||active.total!==frame.total||frame.index!==active.parts.length||Date.now()-active.started>10000||(active.size+=frame.text.length)>710000)throw new Error('Out-of-order/oversized transport fragment');
+    active.parts.push(frame.text);if(active.parts.length!==active.total)return null;const value=JSON.parse(active.parts.join(''));active=null;return value;
+  };
 }

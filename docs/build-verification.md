@@ -30,7 +30,4 @@ local/remote scheduling. Electron smoke covers the graph, donation panel and
 one-use worker-pair approval without issuing wallet credentials.
 
 The prior Rust native quality jobs passed on Windows, Ubuntu x64 and Ubuntu arm64.
-Its dependency-policy job exposed missing explicit workspace versions and the
-permissive Zlib license used by foldhash; those are corrected in the next revision.
-WebLLM model downloads on physical browsers, public PeerJS/NAT pairing and live
-Groq/OpenRouter account billing have not been established by synthetic tests.
+Dependency policy now passes with explicit workspace versions and the permissive Zlib license used by foldhash. The deployed web model loaded on a real NVIDIA WebGPU adapter. Two independent browser sessions showed two online sessions through live Nostr relays with no account pairing. Guest donation, privacy guards, context limits and transport fragmentation have regression coverage. Public PeerJS/NAT pairing across physical phones and live Groq/OpenRouter account billing remain unverified.

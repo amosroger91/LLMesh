@@ -223,3 +223,6 @@ must not cache authenticated API responses or root credentials in the service wo
 - [NIP-44 security limits](https://github.com/nostr-protocol/nips/blob/master/44.md)
 - [Rust's browser WASM target and OS limitations](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html)
 - [WebGPU availability and secure contexts](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API)
+
+
+Implemented follow-up: public ephemeral Nostr discovery, automatic donation-only guest browsers through desktop gateways, optional QR-linked harvesting, and external-worker consent enforcement. Full root-account wallet login is still separate from this worker-only linking.

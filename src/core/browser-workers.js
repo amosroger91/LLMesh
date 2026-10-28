@@ -4,8 +4,8 @@ import {usageCredits} from './pricing.js';
 
 export class BrowserWorkers extends EventEmitter {
   constructor(){super();this.devices=new Map();this.tasks=new Map();this.timer=setInterval(()=>this.expire(),5000);this.timer.unref();}
-  register(id,name){if(!/^[a-f0-9]{64}$/.test(id)||this.devices.size>=16)throw new Error('Invalid device or device limit reached');
-    this.devices.set(id,{id:'web-'+id,name:String(name).slice(0,60),deviceId:id,model:'qwen3.5:0.8b',state:'paired',busy:0,lastSeen:Date.now(),engine:'WebLLM'});}
+  register(id,name,community=false){if(!/^[a-f0-9]{64}$/.test(id)||this.devices.size>=16)throw new Error('Invalid device or device limit reached');
+    this.devices.set(id,{id:'web-'+id,name:String(name).slice(0,60),deviceId:id,model:'qwen3.5:0.8b',state:'paired',busy:0,lastSeen:Date.now(),engine:'WebLLM',community});}
   report(id,event){const device=this.devices.get(id);if(!device)throw new Error('Device is not approved');device.lastSeen=Date.now();
     if(event.type==='heartbeat')return;
     if(event.type==='state'){if(!['paired','loading','ready','paused','error'].includes(event.state))throw new Error('Invalid browser state');device.state=event.state;device.engineModel=String(event.engineModel??'').slice(0,100);return;}
@@ -19,7 +19,9 @@ export class BrowserWorkers extends EventEmitter {
   expire(){for(const [id,device]of this.devices)if(Date.now()-device.lastSeen>30000)this.remove(id);}
   snapshot(){return [...this.devices.values()].map(device=>({...device,slots:1,free:device.state==='ready'&&!device.busy?1:0,metrics:{},backend:'webgpu',gpus:[]}));}
   async *chat(job,signal){const device=[...this.devices.values()].find(device=>device.id===job.instanceId&&device.state==='ready'&&!device.busy);if(!device)throw new Error('Browser worker is unavailable');
+    if(device.community&&job.privacy!=='allow-third-party')throw new Error('Community workers require explicit external-worker consent');
     if(job.tools?.length)throw new Error('Browser model does not support tools');
+    if(job.contextTokens>4096)throw new Error('Browser worker context limit is 4096 tokens');
     const id=randomUUID(),task={deviceId:device.deviceId,queue:[],bytes:0,job};this.tasks.set(id,task);device.busy=1;
     const abort=()=>{task.error=new Error('Browser inference cancelled');task.done=true;task.wake?.();this.emit('send',{deviceId:device.deviceId,message:{type:'cancel',id}});};
     signal.addEventListener('abort',abort,{once:true});const timer=setTimeout(abort,180000);

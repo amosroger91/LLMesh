@@ -40,3 +40,26 @@ test('linked browser serves the real service route and accounts to the desktop i
    assert.throws(()=>service.route({model:'llmesh-auto',messages:[{role:'user',content:'hi'}],tools:[{type:'function',function:{name:'test',parameters:{type:'object'}}}]}),/No idle/);
  }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
 });
+
+test('guest browser donates without a wallet and cannot receive private requests',async()=>{
+ const workers=new BrowserWorkers(),id='c'.repeat(64);workers.register(id,'Guest phone',true);workers.report(id,{type:'state',state:'ready'});
+ const job={instanceId:'web-'+id,contextTokens:4096,maxTokens:12,privacy:'mesh-only'};
+ try{await assert.rejects(async()=>{for await(const _part of workers.chat(job,new AbortController().signal)){/* Drain until the privacy guard rejects. */}},/explicit external-worker consent/);
+ workers.on('send',({message})=>{if(message.type==='job'){workers.report(id,{type:'delta',id:message.id,text:'guest answer'});workers.report(id,{type:'done',id:message.id,promptTokens:2,tokens:3});}});
+ const parts=[];for await(const part of workers.chat({...job,privacy:'allow-third-party'},new AbortController().signal))parts.push(part);
+ assert.equal(parts[0].text,'guest answer');assert.equal(parts[1].tokens,3);assert.equal(workers.snapshot()[0].community,true);
+ }finally{workers.close();}
+});
+
+test('guest capability is consent-gated at routing and execution and respects browser context',async()=>{
+ const directory=mkdtempSync(join(tmpdir(),'llmesh-guest-')),device='d'.repeat(64);
+ const service=new Service({directory,secret:generateSecretKey(),network:false,ollama:{installed:async()=>[],close(){}}});
+ try{service.browserWorkers.register(device,'Anonymous phone',true);service.browserWorkers.report(device,{type:'state',state:'ready'});
+ const job={model:'llmesh-auto',messages:[{role:'user',content:'hello'}],maxTokens:12};
+ assert.throws(()=>service.route(job),/No idle/);assert.equal(service.route({...job,privacy:'allow-third-party'}).source,'community');
+ assert.equal(service.localSlots()[0].source,'community');
+ assert.throws(()=>service.route({...job,privacy:'allow-third-party',messages:[{role:'user',content:'a'.repeat(20000)}]}),/No idle/);
+ service.browserWorkers.on('send',({deviceId,message})=>{if(message.type==='job')setImmediate(()=>service.browserWorkers.report(deviceId,{type:'done',id:message.id,promptTokens:2,tokens:3}));});
+ const receipt=await service.chat(service.pubkey,{...job,privacy:'allow-third-party'},()=>{});assert.equal(receipt.credits,5);assert.equal(service.ledger.account(service.pubkey).balance,100000);
+ }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
+});

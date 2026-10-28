@@ -1,23 +1,26 @@
+import {Presence} from '../browser/presence.js';
 import {Peer} from 'peerjs';
 import QRCode from 'qrcode';
-import {ephemeralKey,publicKey,secureChannel,sendData} from '../browser/secure-channel.js';
+import {ephemeralKey,publicKey,secureChannel,sendData,reassemble} from '../browser/secure-channel.js';
 import {renderNetwork} from '../browser/network-map.js';
 
 export function browserBridge(api){
-  const sessions=new Map();let peer,key,certificate,pair;
+  const sessions=new Map();let peer,key,certificate,pair,presence,starting;const guestNonce=Array.from(crypto.getRandomValues(new Uint8Array(32))).map(n=>n.toString(16).padStart(2,'0')).join('');
   const note=value=>{document.getElementById('pair-note').textContent=value;};
   api.onBrowserSend(({deviceId,message})=>{void sessions.get(deviceId)?.channel.send(message).catch(()=>{sessions.get(deviceId)?.connection.close();});});
   async function createPeer(){
     key=await ephemeralKey();peer=new Peer();
     peer.on('error',error=>note(error.message));
     peer.on('connection',connection=>{
-      let channel,deviceId,approved=false,serial=Promise.resolve();const deadline=setTimeout(()=>{if(!approved)connection.close();},120000);
+      let channel,deviceId,approved=false,serial=Promise.resolve();const assemble=reassemble(),deadline=setTimeout(()=>{if(!approved)connection.close();},120000);
       connection.on('data',data=>{serial=serial.then(async()=>{
-        if(!channel){if(data?.type!=='join'||data.nonce!==pair?.nonce||Date.now()>pair.expires)throw new Error('Invalid pairing request');
-          const sessionPair={...pair};
+        data=assemble(data);if(data===null)return;
+        if(!channel){const guest=data?.nonce===guestNonce;if(data?.type!=='join'||(!guest&&(data.nonce!==pair?.nonce||Date.now()>pair.expires)))throw new Error('Invalid pairing request');
+          const sessionPair=guest?{nonce:guestNonce}:{...pair};
           const name=String(data.name??'Browser device').slice(0,60),pub=data.publicKey;
           deviceId=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(pub))))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
           channel=await secureChannel(key,pub,sessionPair.nonce,body=>sendData(connection,body));
+          if(guest){await api.browserGuest({deviceId,name});approved=true;clearTimeout(deadline);sessions.set(deviceId,{channel,connection});await channel.send({type:'approved',scope:'donation-only'});return;}
           const row=document.createElement('div');row.className='session';const label=document.createElement('span');label.textContent=`${name} · ${deviceId.slice(0,12)}`;
           const approve=document.createElement('button');approve.textContent='Approve device';const deny=document.createElement('button');deny.textContent='Deny';deny.className='secondary';
           approve.onclick=async()=>{try{const account=await api.browserApprove({deviceId,name,nonce:sessionPair.nonce});approved=true;clearTimeout(deadline);sessions.set(deviceId,{channel,connection});await channel.send({type:'approved',...account});row.remove();note('Linked. Worker earnings go to this desktop account. Generate another QR to add a device.');}catch(error){note(error.message);connection.close();row.remove();}};
@@ -31,7 +34,9 @@ export function browserBridge(api){
     });
     await new Promise((resolve,reject)=>{peer.once('open',resolve);peer.once('error',reject);setTimeout(()=>reject(new Error('Signaling unavailable; retry QR setup')),15000);});
   }
-  document.getElementById('pair-create').onclick=async()=>{try{note('Connecting to peer signaling…');if(!peer||peer.destroyed)await createPeer();
+  starting=createPeer();void starting.then(async()=>{const gateway={peerId:peer.id,publicKey:await publicKey(key),nonce:guestNonce};presence=new Presence(()=>({kind:'desktop',name:'Desktop gateway',gateway}),()=>{});}).catch(error=>note('Public discovery unavailable: '+error.message));
+  window.addEventListener('pagehide',()=>{presence?.close();peer?.destroy();});
+  document.getElementById('pair-create').onclick=async()=>{try{note('Connecting to peer signaling…');await starting;if(!peer||peer.destroyed)await createPeer();
     certificate=await api.browserPair({peerId:peer.id,publicKey:await publicKey(key)});pair=JSON.parse(certificate.content);
     const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(certificate)))).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
     const url='https://amosroger91.github.io/LLMesh/#pair='+encoded;

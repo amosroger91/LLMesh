@@ -44,10 +44,11 @@ export function planRoute(job, workers, now = Date.now()) {
   let options = [];
   const models = [...new Map([...catalog.models,...workers.flatMap(worker=>worker.modelCatalog??[])].map(model=>[model.id,model])).values()];
   for (const worker of workers) {
-    if ((worker.source==='third-party'&&job.privacy!=='allow-third-party') || (job.tools?.length && worker.supportsTools === false) || worker.busy !== 0 || !Number.isFinite(worker.seen) || now - worker.seen >= 35000 || worker.seen > now + 60000 ||
+    if ((['third-party','community'].includes(worker.source)&&job.privacy!=='allow-third-party') || (job.tools?.length && worker.supportsTools === false) || worker.busy !== 0 || !Number.isFinite(worker.seen) || now - worker.seen >= 35000 || worker.seen > now + 60000 ||
         (job.workerKey && job.workerKey !== worker.pubkey)) continue;
     for (const model of models) {
       if (!worker.models.includes(model.id) || (!automatic && job.model !== model.id)) continue;
+      if(worker.maxContextTokens!=null&&(job.contextTokens??4096)>worker.maxContextTokens)continue;
       if (worker.source !== 'third-party' && Number.isFinite(worker.hardware?.maxModelRank) && model.rank > worker.hardware.maxModelRank) continue;
       const pricing = quoteWork(model, job.messages, job.maxTokens ?? 512, job.tools, job.contextTokens);
       if(worker.creditBudget!=null&&pricing.reservedCredits>worker.creditBudget)continue;
@@ -77,6 +78,6 @@ export function planRoute(job, workers, now = Date.now()) {
     estimate: best.estimate, eligibleOptions: options.length,
     reason: `${complexity.level} request → ${best.model.id} on ${best.worker.local ? 'your node' : best.worker.pubkey.slice(0, 12) + '…'}; ${Math.round(best.estimate.firstTokenMs)} ms estimated first token (${best.estimate.basis}).` +
       ` 1 credit per input/output token; ${best.pricing.reservedCredits} credits reserved, unused credits returned.` +
-      (best.worker.source==='third-party'?' Prompt sent to a donated third-party API with your permission.':'') +
+      (best.worker.source==='third-party'?' Prompt sent to a donated third-party API with your permission.':best.worker.source==='community'?' Prompt sent to a public community browser with your permission.':'') +
       (degraded ? ' Selected model is below the recommended capability tier.' : '') };
 }
