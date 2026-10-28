@@ -1,0 +1,4 @@
+import {readFile} from 'node:fs/promises';import {createReadStream} from 'node:fs';import {createHash} from 'node:crypto';import {join} from 'node:path';
+const root='vendor/browser',manifest=JSON.parse(await readFile(join(root,'manifest.json'),'utf8'));let total=0;
+for(const file of manifest.files){const whole=createHash('sha256');let size=0;for(const part of file.parts){const hash=createHash('sha256');let bytes=0;if(!/^[\w./-]+$/.test(part.path)||part.path.split('/').includes('..'))throw new Error('Invalid asset path');for await(const chunk of createReadStream(join(root,part.path))){hash.update(chunk);whole.update(chunk);bytes+=chunk.length;}if(bytes!==part.size||hash.digest('hex')!==part.sha256)throw new Error('Bad asset part: '+part.path);size+=bytes;}if(size!==file.size||whole.digest('hex')!==file.sha256)throw new Error('Bad assembled asset: '+file.path);total+=size;}
+console.log(`Verified ${manifest.files.length} complete browser assets (${total} bytes)`);

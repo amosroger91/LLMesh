@@ -42,7 +42,8 @@
     "nostr-tools": "^2.0.0",
     "peerjs": "^1.5.5",
     "qrcode": "^1.5.4",
-    "systeminformation": "^5.0.0"
+    "systeminformation": "^5.0.0",
+    "@noble/hashes": "1.8.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

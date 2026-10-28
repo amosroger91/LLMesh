@@ -1,3 +1,4 @@
+import {localModelConfig} from '../browser/local-models.js';
 import {memoryFailure} from '../shared/memory-status.js';
 import {servingTopology} from '../browser/serving-topology.js';
 import {nodeProfile as validateProfile} from '../shared/node-profile.js';
@@ -59,7 +60,7 @@ $('start').onclick=async()=>{try{memoryBlocked=false;presence?.changed();$('erro
   if(!navigator.gpu)throw new Error('WebGPU is unavailable. Use a supported browser with hardware acceleration enabled.');
   const adapter=await navigator.gpu.requestAdapter();if(!adapter)throw new Error('No WebGPU adapter is available');
   if(!engine){const {CreateMLCEngine}=await import('@mlc-ai/web-llm');engineModel=adapter.features.has('shader-f16')?'Qwen3.5-0.8B-q4f16_1-MLC':'Qwen3.5-0.8B-q4f32_1-MLC';
-    engine=await CreateMLCEngine(engineModel,{initProgressCallback:item=>{$('progress').textContent=item.text;$('load').value=item.progress;}},{context_window_size:4096});}
+    engine=await CreateMLCEngine(engineModel,{appConfig:await localModelConfig(),initProgressCallback:item=>{$('progress').textContent=item.text;$('load').value=item.progress;}},{context_window_size:4096});}
   if(!toolsEnabled){$('progress').textContent='Checking this model’s tool-calling support…';toolsEnabled=await probeBrowserTools(engine);}
   enabled=true;$('model').textContent='Qwen3.5 · 0.8B';$('backend').textContent=engineModel+(toolsEnabled?' · tool self-test passed':' · text only');$('start').hidden=true;$('stop').hidden=false;activity(approved?'READY':'FINDING GATEWAY');presence?.publish();presence?.refresh();
   $('status').textContent=approved?'Ready to serve requests. Leave this tab open.':'Model ready. Finding a community gateway; no wallet required. Leave this tab open.';await reportState();

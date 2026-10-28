@@ -1,0 +1,3 @@
+vendor/**/*.part* binary
+vendor/native/manifests/** -text
+vendor/llama.cpp/*.zip binary
