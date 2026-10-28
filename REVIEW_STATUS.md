@@ -33,7 +33,9 @@ Remaining: deeper Service decomposition, complete GPU/instance controls, concurr
 
 Added after the initial review: metered billing by model size (0.5 credit per token for 0.8B and browser workers, 1 through 9B, 1.5 above that), refundable reservations, 100,000-credit starter grants, escrow v5 usage-bound delivery receipts, worker-only browser QR enrollment, WebLLM/PeerJS worker transport, a network graph, bounded swarm tasks and opt-in donated API inference. Mesh-only is the default and is enforced independently by API runtimes. Provider usage, quota failures and actual reported models are recorded without exposing keys. A local self-request cannot mint rewards.
 
-Remaining roadmap work includes audited payment channels, group PKI, broader retry/chaos testing, complete recovery, signed model catalogs/benchmarks and observability. Automatic native model selection remains in force; donation configuration selects an upstream model, not the native contribution model.
+Internal credits are the default settlement on the desktop and the headless CLI. Base escrow remains optional and is not deployed. A coordinator signs a Nostr receipt for remote credit work. The worker stores that receipt only after it matches completed work, and a later receipt must use a newer sequence. The receipt does not mint a spendable balance on the worker. A discrete GPU that cannot fit the desktop 4B minimum serves the largest smaller model that fits on that GPU. Machines with no discrete GPU do not silently drop below the desktop minimum.
+
+Remaining roadmap work includes audited payment channels, an encrypted identity backup, group invite management, broader retry/chaos testing, signed model catalogs and observability. See [ROADMAP.md](ROADMAP.md). Automatic native model selection remains in force; donation configuration selects an upstream model, not the native contribution model.
 
 ## Internet funnel
 

@@ -12,6 +12,10 @@ test('desktop minimum is quantized 4B even when RAM and VRAM are occupied; all l
  }
  const larger=chooseContribution({...hardware,ramGB:64,gpus:[{...hardware.gpus[0],vramGB:24}]},'high',DESKTOP_PLACEMENT);assert.equal(larger.model.id,'qwen3.8:27b');
  assert.equal(chooseContribution({...hardware,ramGB:8,gpus:[]},'medium',DESKTOP_PLACEMENT).model,null,'No silent fallback to a browser-sized model');
+ const fourGig={ramGB:16,freeRamGB:8,cores:8,physicalCores:4,platform:'win32',gpus:[{vendor:'NVIDIA',name:'GTX 1650',index:0,uuid:'gpu-4',vramGB:4,freeGB:3.5}]};
+ const fitted=chooseContribution(fourGig,'medium',DESKTOP_PLACEMENT);
+ assert.equal(fitted.mode,'gpu');assert.equal(fitted.model.id,'qwen3.5:0.8b');assert.ok(fitted.placement.warnings.some(warning=>/does not fit this GPU/.test(warning)));
+ assert.equal(chooseContribution(fourGig,'high',DESKTOP_PLACEMENT).model.id,'qwen3.5:2b-q4_K_M');
  assert.ok(catalog.models.some(model=>model.id==='qwen3.5:2b-q4_K_M'));assert.ok(catalog.models.some(model=>model.id==='qwen3.5:0.8b'));
 });
 test('indefinite residency reaches both warmup and inference requests',async()=>{

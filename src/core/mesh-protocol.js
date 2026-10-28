@@ -1,6 +1,8 @@
 const id = value => typeof value === 'string' && value.length > 0 && value.length <= 64;
 const hex = (value, length) => typeof value === 'string' && new RegExp(`^0x[0-9a-f]{${length}}$`, 'i').test(value);
 const validators = {
+  credits:message=>message.event&&typeof message.event.content==='string'&&message.event.content.length<=4000,
+  'credits-ack':message=>typeof message.eventId==='string'&&/^[a-f0-9]{64}$/.test(message.eventId),
   hello: message => message.event && typeof message.event === 'object' && typeof message.event.content === 'string' && message.event.content.length < 64000,
   ping: message => id(message.id),
   pong: message => id(message.id),

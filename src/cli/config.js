@@ -10,7 +10,7 @@ const list = value => Array.isArray(value)?value:String(value??'').split(',').fi
 export function secretEnv(name, env=process.env){return env[name+'_FILE']?readFileSync(env[name+'_FILE'],'utf8').trim():env[name];}
 export function loadConfig(argv=process.argv.slice(2), env=process.env) {
   const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{
-    config:{type:'string'},listen:{type:'string'},gpus:{type:'string'},placement:{type:'string'},parallel:{type:'string'},runtime:{type:'string'},engine:{type:'string'},'llama-server':{type:'string'},'ollama-url':{type:'string',multiple:true},level:{type:'string'},
+    config:{type:'string'},listen:{type:'string'},gpus:{type:'string'},placement:{type:'string'},parallel:{type:'string'},runtime:{type:'string'},engine:{type:'string'},settlement:{type:'string'},'llama-server':{type:'string'},'ollama-url':{type:'string',multiple:true},level:{type:'string'},
     'data-dir':{type:'string'},'admin-socket':{type:'string'},'metrics-listen':{type:'string'},'tls-cert':{type:'string'},'tls-key':{type:'string'},'insecure-listen':{type:'boolean'},'funnel-open':{type:'boolean'},
     'install-runtime':{type:'boolean'},'log-format':{type:'string'},'drain-timeout':{type:'string'},json:{type:'boolean'},offline:{type:'boolean'},version:{type:'boolean'},help:{type:'boolean'},out:{type:'string'},
     funnel:{type:'string'},'funnel-relay':{type:'string'},'funnel-public-url':{type:'string'},'funnel-public-base':{type:'string'}
@@ -24,7 +24,7 @@ export function loadConfig(argv=process.argv.slice(2), env=process.env) {
     listen:pick('listen','LLMESH_LISTEN','listen','127.0.0.1:'+(env.LLMESH_PORT??7337)),
     level:pick('level','LLMESH_LEVEL','level','medium'),placement:pick('placement','LLMESH_PLACEMENT','placement','auto'),parallel:Number(pick('parallel','LLMESH_PARALLEL','parallel',1)),
     gpus:pick('gpus','LLMESH_GPUS','gpus','auto'),runtime:pick('runtime','LLMESH_RUNTIME','runtime','managed'),explicitRuntime:values.runtime!=null||env.LLMESH_RUNTIME!=null||file.runtime!=null,
-    engine:pick('engine','LLMESH_RUNTIME_ENGINE','engine','ollama'),llamaServer:pick('llama-server','LLMESH_LLAMA_SERVER','llamaServer',undefined),
+    settlement:pick('settlement','LLMESH_SETTLEMENT','settlement','credits'),engine:pick('engine','LLMESH_RUNTIME_ENGINE','engine','ollama'),llamaServer:pick('llama-server','LLMESH_LLAMA_SERVER','llamaServer',undefined),
     urls:list(values['ollama-url']??env.LLMESH_OLLAMA_URLS??file.ollamaUrls??[]),
     adminSocket:pick('admin-socket','LLMESH_ADMIN_SOCKET','adminSocket',process.platform==='win32'?"\\\\.\\pipe\\llmesh-"+createHash('sha256').update(dataDir).digest('hex').slice(0,32):join(env.XDG_RUNTIME_DIR??dataDir,'admin.sock')),
     metricsListen:pick('metrics-listen','LLMESH_METRICS_LISTEN','metricsListen',null),
@@ -40,6 +40,7 @@ export function loadConfig(argv=process.argv.slice(2), env=process.env) {
   };
   if(!['low','medium','high'].includes(config.level))throw new Error('level must be low, medium, or high');
   if(!['auto','split','replicate'].includes(config.placement))throw new Error('placement must be auto, split, or replicate');
+  if(!['credits','base'].includes(config.settlement))throw new Error('Choose credits or base settlement');
   if(!['ollama','llama.cpp'].includes(config.engine))throw new Error('engine must be ollama or llama.cpp');
   if(!['managed','external'].includes(config.runtime))throw new Error('runtime must be managed or external');
   if(!Number.isInteger(config.parallel)||config.parallel<1||config.parallel>4)throw new Error('parallel must be 1–4');

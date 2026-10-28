@@ -83,6 +83,7 @@ else {
     handle('funnel-probe', () => service.funnel?.probe?.() ?? Promise.resolve({ provider: 'off', state: 'off', publicUrl: null }));
     handle('runtime-engine',value=>service.configureRuntimeEngine(value));
     handle('restart-app',()=>{if(service.busy||service.requests||service.installing)throw new Error('Finish active work before restarting');setTimeout(()=>{app.relaunch();app.quit();},100);return true;});
+    handle('settlement-mode',mode=>service.configureSettlement(mode));
     handle('abliterated-serving',enabled=>service.configureAbliterated(enabled));
     handle('privacy', value => service.configurePrivacy(value));
     handle('node-profile',value=>service.configureNodeProfile(value));
@@ -141,7 +142,7 @@ else {
       finally { clearTimeout(timer); controller = null; }
     };
     handle('chat',chat);
-    handle('companion-chat',job=>chat({...job,hardware_only:undefined,hardwareOnly:true}));
+    handle('companion-chat',job=>chat({...job,hardware_only:undefined,hardwareOnly:true,preferLocal:true}));
     handle('cancel', () => controller?.abort());
     await window.loadFile(join(here, '../ui/index.html'));
     if (process.platform === 'win32') service.ollama.installRuntime = () => new Promise((resolve, reject) => {

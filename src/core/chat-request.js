@@ -30,6 +30,8 @@ export function validateJob(job) {
   if(job.privacy==='mesh-only'&&job.allow_third_party===true||job.privacy==='allow-third-party'&&job.allow_third_party===false)throw new Error('Conflicting privacy options');
   if(job.hardwareOnly!=null&&typeof job.hardwareOnly!=='boolean'||job.hardware_only!=null&&typeof job.hardware_only!=='boolean')throw new Error('hardware_only must be boolean');
   if(job.hardwareOnly!=null&&job.hardware_only!=null&&job.hardwareOnly!==job.hardware_only)throw new Error('Conflicting hardware-only options');
+  if(job.preferLocal!=null&&typeof job.preferLocal!=='boolean')throw new Error('preferLocal must be boolean');
+  const preferLocal=job.preferLocal===true;
   const hardwareOnly=job.hardwareOnly??job.hardware_only??false;
   const privacy=job.privacy??(job.allow_third_party===true?'allow-third-party':'mesh-only');
   const messages = job.messages.map(message => {
@@ -63,7 +65,7 @@ export function validateJob(job) {
   const maxTokens = Math.min(limit, greeting?128:MAX_OUTPUT_TOKENS);
   if (job.complexity != null && !['auto', 'simple', 'standard', 'complex'].includes(job.complexity)) throw new Error('Invalid complexity level');
   if (job.allow_degraded != null && typeof job.allow_degraded !== 'boolean') throw new Error('allow_degraded must be boolean');
-  return { model: job.model, privacy, hardwareOnly, allowAbliterated, messages, tools: tools.map(tool => ({ type: 'function', function: { ...tool.function } })),
+  return { model: job.model, privacy, hardwareOnly, preferLocal, allowAbliterated, messages, tools: tools.map(tool => ({ type: 'function', function: { ...tool.function } })),
     tool_choice:greeting?'none':job.tool_choice??'auto', maxTokens, requestedMaxTokens,
     adaptation:greeting?{kind:'standalone-greeting',omittedTools,outputLimit:maxTokens}:undefined,
     contextTokens: Math.min(32768, Math.max(4096, Math.ceil((inputCharacters / 3 + maxTokens + 512) / 1024) * 1024)),

@@ -12,7 +12,9 @@ LLMesh turns your computer into an AI node. It detects your hardware, chooses a 
 
 You choose how much computing power to contribute. Use the machine in front of you, share a home GPU with your other devices, or build a trusted group that pools access to larger models.
 
-**Current status:** an Electron/Node implementation with local inference, a trusted peer mesh, prototype Base token contracts and a Rust/WASM foundation. No live LLMESH token or escrow deployment is supplied. The web worker and desktop-approved QR device linking are implemented. An opt-in internet funnel can publish that authenticated API for a phone, a cloud job, or any other OpenAI client, through an LLMesh relay, Tailscale Funnel, a Cloudflare tunnel, or an existing HTTPS address. Native Android, full Nostr remote signing, the full Rust daemon and the downloadable installer matrix remain roadmap work.
+**Open and go:** desktop startup opens AI Companion and automatically starts serving. It prefers your idle native model, then eligible mesh hardware when local inference is occupied. Your Nostr identity and 100,000 free coordinator credits are created automatically; Base settlement is optional.
+
+**Current status:** an Electron/Node implementation with local inference, a trusted peer mesh, an internal credit ledger, and optional Base token contracts. No live LLMESH token or escrow deployment is supplied. Credits work without a tradeable token. The web worker and desktop-approved QR device linking are implemented. An opt-in internet funnel can publish that authenticated API for a phone, a cloud job, or any other OpenAI client, through an LLMesh relay, Tailscale Funnel, a Cloudflare tunnel, or an existing HTTPS address. Native Android, full Nostr remote signing, the full Rust daemon and the downloadable installer matrix remain roadmap work.
 
 [Open the web worker](https://amosroger91.github.io/LLMesh/) · [Start](#start-running) · [Features](#what-works-today) · [API](#one-endpoint-for-your-tools) · [Vision](#what-happens-when-the-network-grows) · [Roadmap](#where-were-going)
 
@@ -273,7 +275,7 @@ The app contains no social rooms, public feed or RSS bots. Nostr provides identi
 
 **Contribute overnight. Build during your workday.** A developer without a 16 GB GPU could let a smaller computer serve real requests while idle, bank the earned credits, then spend them on another person's larger model during work. Their own hardware remains in the pool: suitable tasks can stay local, tiny tasks can use waiting mobile/browser workers, and demanding tasks can use higher-end machines. Donated API allowance adds capacity for people without a useful GPU and can help bootstrap speed and model quality.
 
-The tangible unit is reported inference work, not merely leaving an app open. Idle time does not mint tokens. ERC-20 balances are transferable, enabling a future exchange for money as well as inference; an exchange, liquidity and monetary value are not supplied or guaranteed. One token is an accounting unit accepted by participating workers, not a guaranteed claim on reserved hardware, electricity, or a fixed quality of answer. Model tokenizers and computational costs differ; the current uniform rate is an explicit initial exchange policy.
+The tangible unit is reported inference work, not merely leaving an app open. Idle time does not mint tokens. ERC-20 balances are transferable, enabling a future exchange for money as well as inference; an exchange, liquidity and monetary value are not supplied or guaranteed. One token is an accounting unit accepted by participating workers, not a guaranteed claim on reserved hardware, electricity, or a fixed quality of answer. Model tokenizers and computational costs differ. The rate follows the serving model: 0.5 credit per token for 0.8B and browser workers, 1 through 9B, and 1.5 above that.
 
 One local model gives one person more control. A widely adopted mesh could make that control useful at a different scale: a classroom sharing a GPU after hours, a neighborhood cooperative pooling hardware, an independent researcher accessing a larger model, or a small organization running its own private inference network.
 
@@ -298,13 +300,15 @@ Wider adoption would not automatically remove corporate power or create an equal
 | Web | GitHub Pages WebGPU/WASM worker, encrypted WebRTC link, online count and activity | Real-device/browser matrix, persistent sessions and PWA requester |
 | Shared accounts | Desktop-approved browser worker sessions; earnings stay on its account | Full NIP-46 signer integration and cross-platform account portability |
 | Security | Trusted peers, replay checks, encrypted transport/local key options | Rust-only group PKI, privacy sealing, audit and Sovereign edition |
-| Payments | Prototype fixed-price escrow | Audited channels, recovery and stronger spending controls |
+| Payments | Internal credits by default. Optional Base escrow v5 when contracts are configured. Signed receipts confirm earnings at another coordinator and do not mint spendable money locally | Recovery export, audited channels, and any later exchange |
 
 The worker QR flow approves a new device through its desktop; it does not put a private key or wallet seed in the QR. Account identity, device membership and spending permission remain separate. Signing into the same account must not mint another starter grant. History synchronization is separately consented, not an automatic upload of conversations.
 
 Node keeps shipping until Rust passes parity. WASM shares portable logic, not the entire native daemon: browsers need different transport/storage adapters and cannot spawn Ollama or inspect free VRAM like a native app. The companion continues to use the same mesh inference pipeline.
 
 Plans and acceptance criteria:
+
+- [Public-alpha roadmap](ROADMAP.md)
 
 - [Multi-GPU, Linux CLI and releases](PLAN_MULTI_GPU_AND_RELEASES.md)
 - [Rust core and Android](PLAN_RUST_AND_ANDROID.md)
@@ -443,3 +447,14 @@ The optional **abliterated 4B worker is disabled by default**. Enabling it adds 
 The `model-vault-v1` archive has completed: 31 pinned native assets totaling 35,604,222,287 bytes are stored in this repository's [verified model backup release](https://github.com/amosroger91/LLMesh/releases/tag/model-vault-v1). Native setup can recover from these hashed release chunks when the registry fails. Browser weights and WASM are actual Git content under `vendor/browser`; the web build verifies all 908,219,779 bytes before deployment. `node scripts/restore-model.js <exact-model-id>` restores a native model from the repository archive.
 
 Verification uses no desktop mouse or keyboard automation: `npm test` covers routing, metering, graph inventory, startup speed measurement, and model opt-in/lifecycle guards. `npm run smoke` uses an isolated hidden Electron window to exercise the UI and capture test artifacts. For an explicitly requested live check, `npm run test:live` uses an already-running local Ollama worker at `http://127.0.0.1:11500` (override `LLMESH_E2E_OLLAMA_URL`), loads the optional secondary 4B model, checks concurrent real JSON responses, completed SSE, opt-in rejection, automatic routing exclusion, and normal-worker survival after secondary shutdown. It may download the pinned secondary model, temporarily uses additional RAM, and closes only its owned secondary process. The default application setting remains disabled.
+
+
+### Open, serve, and chat — free credits by default
+
+Desktop startup opens **AI Companion** every time and automatically starts hardware setup and serving. Companion prefers an idle native model on this computer, even if another worker is faster. When local hardware is occupied or incompatible with the request, it can use another eligible hardware worker. Donated APIs and automatic abliterated selection remain excluded. Messages submitted during automatic model preparation can wait for setup within the request timeout.
+
+Desktop and headless CLI now default to **free coordinator credits**. The Nostr identity and 100,000-credit starter balance are created locally without a signup, wallet funding, or gas. In Settings → Settlement, choose free credits or optional Base ERC-20 escrow. CLI uses `--settlement credits|base` or `LLMESH_SETTLEMENT`. Changing modes keeps the two balances separate. Requests reserve a maximum budget, settle actual metered usage on completion, and refund unused credits. Failed work earns no credits. Self-served work spends and earns the same amount, so its net cost is zero.
+
+A free-credit coordinator immediately credits its selected worker in **that coordinator's ledger**. It sends a Nostr-signed earnings receipt over the authenticated encrypted mesh. The worker verifies that the receipt matches its completed model and token usage, stores it, acknowledges it, and shows the issuer balance under Token wallet. Pending receipts retry after reconnection; duplicate deliveries do not create additional earnings. These receipts are not added to the worker's separate local spendable balance. The issuing coordinator's API accepts that worker's Nostr identity for spending those earnings. Linked browser harvesting stays attached to its desktop account.
+
+**Credit scope matters:** these are issuer-scoped inference credits, not a new globally settled blockchain asset, guaranteed cash value, or automatic Base token conversion. Coordinators remain trusted to maintain and honor their balances. Use the issuer's API to spend its credits; there is no claim that a balance can be independently spent at every node. Optional Base escrow remains available for configured and funded peers, with its own balance and network fees. Base gas sponsorship charges a sponsor rather than removing network costs ([Base account abstraction](https://www.base.org/blog/native-account-abstraction)). LLMesh does not purchase a paymaster service, deploy contracts, or spend gas automatically.

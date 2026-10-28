@@ -27,6 +27,7 @@ app.on('browser-window-created', (_event, window) => {
       })`);
       if (result.levels !== 3 || result.modelChooser || result.socialNavigation || result.error) throw new Error(JSON.stringify(result));
       assert.equal(await window.webContents.executeJavaScript(`document.getElementById('privacy-mode').closest('.view').id`),'view-settings');
+      assert.equal(await window.webContents.executeJavaScript(`document.getElementById('settlement-mode').value`),'credits');
       assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('#runtime-engine').length`),1);
       assert.equal(await window.webContents.executeJavaScript(`Boolean(document.getElementById('model-inventory'))`),true);
       const desktopModules=await window.webContents.executeJavaScript(`['network-map','public-network-map','public-network-count','pair-create','linked-devices','donor-list','privacy-mode','funnel-provider','funnel-cloudflare-token','funnel-status'].every(id=>Boolean(document.getElementById(id)))`);

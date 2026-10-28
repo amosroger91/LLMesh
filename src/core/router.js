@@ -63,6 +63,7 @@ export function planRoute(job, workers, now = Date.now()) {
     }
   }
   if(!options.length)throw new Error('No idle trusted node can run this request ('+(job.model??AUTO_MODEL)+'). '+(excluded.size?[...excluded].join('; ')+'.':'Workers may be offline, busy, or unable to serve the requested model.'));
+  if(automatic&&job.preferLocal){const native=options.filter(option=>option.worker.localNative&&(job.allowDegraded!==false||option.model.rank>=complexity.minimumRank));if(native.length)options=native;}
   let degraded = false;
   if (automatic) {
     const capable = options.filter(option => option.model.rank >= complexity.minimumRank);

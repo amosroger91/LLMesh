@@ -32,10 +32,15 @@ function renderEnergy(energy) {
   }
 }
 function renderPayments(payment) {
+  const baseMode=state.settlementMode==='base';
+  $('credit-balance').textContent=formatCredits(state.account?.balance??0)+' credits';
+  $('credit-history').replaceChildren();for(const job of state.creditActivity??[]){const row=document.createElement('p');const amount=formatCredits(job.used_credits??0);row.textContent=job.state==='settled'?`${job.payer===state.pubkey?amount+' spent':''}${job.worker===state.pubkey?' · '+amount+' earned':''} · ${job.worker===job.payer?'self-served · net zero':job.worker===state.pubkey?'work delivered':'worker paid'} · ${new Date(job.created).toLocaleTimeString()}`:`${job.state} · ${formatCredits(job.price)} credits reserved`; $('credit-history').append(row);}
+  $('issuer-credits').replaceChildren();for(const issuer of state.creditIssuers??[]){const row=document.createElement('p');row.textContent=`${short(issuer.issuer)} · ${formatCredits(issuer.earned)} earned · ${formatCredits(issuer.balance)} last confirmed balance at that coordinator${issuer.api?' · API: '+issuer.api:''}`;$('issuer-credits').append(row);}
   $('wallet-address').textContent = payment.address ?? 'Unavailable';
-  $('balance').textContent = payment.configured ? Number(payment.balance ?? 0).toFixed(2) : formatCredits(state.account?.balance ?? 0);
-  $('balance-label').textContent = payment.configured ? `${payment.chainId === 8453 ? 'Base' : 'Test network'} · earned from completed work` : 'Local self-service credits · spend and earn back';
-  $('wallet-status').textContent = payment.configured ? `${payment.balance} LLMESH · ${Number(payment.nativeBalance).toFixed(6)} ETH gas · ${payment.isCoordinator ? 'Coordinator wallet' : 'Worker receiving wallet'}` : payment.error ?? 'Self-served requests reserve local credits and return them on completion. Base payments are required for other nodes.';
+  $('balance').textContent = baseMode?(payment.configured?Number(payment.balance??0).toFixed(2):'—'):formatCredits(state.account?.balance??0);
+  $('balance-label').textContent = baseMode?(payment.configured?`${payment.chainId===8453?'Base':'Test network'} · earned from completed work`:'Base settlement · configure contracts'):'Free LLMesh credits · no gas or signup';
+  $('wallet-register').disabled=!baseMode||!payment.configured;$('wallet-refresh').disabled=!payment.configured;
+  $('wallet-status').textContent = baseMode&&payment.configured ? `${payment.balance} LLMESH · ${Number(payment.nativeBalance).toFixed(6)} ETH gas · ${payment.isCoordinator ? 'Coordinator wallet' : 'Worker receiving wallet'}` : baseMode?(payment.error??'Configure and fund Base contracts to use on-chain settlement.'):'Credits are active immediately. Completed work settles in this coordinator’s ledger; self-served requests spend and earn back the same amount. Base settlement is optional.';
   $('wallet-jobs').replaceChildren();
   for (const job of payment.jobs ?? []) {
     const row = document.createElement('div'); row.className = 'session'; const id = document.createElement('code'); id.textContent = job.id;
@@ -44,6 +49,7 @@ function renderPayments(payment) {
 }
 async function refresh() {
   state = await api.status();
+  if(!$('settlement-mode').disabled)$('settlement-mode').value=state.settlementMode??'credits';
   if(!$('runtime-engine').disabled)$('runtime-engine').value=state.pendingRuntimeEngine??state.runtimeEngine??'ollama';
   $('restart-runtime').classList.toggle('hidden',!state.pendingRuntimeEngine||state.pendingRuntimeEngine===state.runtimeEngine);
   $('abliterated-status').textContent=state.abliteratedSetup?.message??(state.abliteratedServing?'Preparing additional worker':'Disabled');
@@ -107,6 +113,7 @@ document.querySelectorAll('[data-view]').forEach(button => { button.onclick = ()
   document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav === button));
   $('page-title').textContent = button.textContent.trim(); localStorage.setItem('llmesh-view', button.dataset.view);
 }; });
+$('settlement-mode').onchange=async()=>{const control=$('settlement-mode');control.disabled=true;try{await api.settlementMode(control.value);await refresh();}catch(cause){control.value=state.settlementMode;error(cause);}finally{control.disabled=false;}};
 $('runtime-engine').onchange=async()=>{const control=$('runtime-engine');control.disabled=true;try{await api.nativeRuntime(control.value);await refresh();$('runtime-note').textContent='Runtime choice saved. Restart LLMesh to apply.';}catch(cause){control.value=state.pendingRuntimeEngine??state.runtimeEngine??'ollama';error(cause);}finally{control.disabled=false;}};
 bind('restart-runtime',()=>api.restart());
 $('abliterated-serving').onchange=async()=>{const control=$('abliterated-serving');control.disabled=true;try{await api.abliteratedServing(control.checked);await refresh();}catch(cause){control.checked=state.abliteratedServing===true;error(cause);}finally{control.disabled=false;}};
@@ -202,7 +209,7 @@ async function initialize() {
   companionHistory = await store.get('companion-history') ?? [];
   for (const message of companionHistory) { const row = document.createElement('div'); row.className = 'chat-message'; if(message.role==='assistant'){const view=responseView(row);view.appendData(message.content);view.finish();}else row.textContent=message.content; $('companion-history').append(row); }
   setInterval(() => refresh().catch(error), 1500);
-  const savedView = localStorage.getItem('llmesh-view'); document.querySelector(`[data-view="${['overview', 'companion', 'network', 'donations', 'energy', 'wallet', 'settings'].includes(savedView) ? savedView : 'overview'}"]`)?.click();
+  document.querySelector('[data-view="companion"]')?.click();
   document.body.dataset.ready = 'true';
 }
 initialize().catch(error);

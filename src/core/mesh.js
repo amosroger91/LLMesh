@@ -16,8 +16,8 @@ export function rankWorkers(workers, model) {
 }
 
 export class Mesh extends EventEmitter {
-  constructor({ secret, topic, describe, run, onDelivery, allowedWorkers = [], trustedCoordinators = [], handshakeTimeoutMs = 10000, swarm }) {
-    super(); Object.assign(this, { secret, describe, run, onDelivery, allowedWorkers, trustedCoordinators, handshakeTimeoutMs });
+  constructor({ secret, topic, describe, run, onDelivery, onCredits, onCreditAck, allowedWorkers = [], trustedCoordinators = [], handshakeTimeoutMs = 10000, swarm }) {
+    super(); Object.assign(this, { secret, describe, run, onDelivery, onCredits, onCreditAck, allowedWorkers, trustedCoordinators, handshakeTimeoutMs });
     this.swarm = swarm ?? new Hyperswarm({ maxPeers: 32 });
     this.byIdentity = new Map(); this.peers = new Map(); this.pending = new Map(); this.active = new Map();
     this.swarm.on('error', error => this.emit('warning', error.message));
@@ -114,6 +114,7 @@ export class Mesh extends EventEmitter {
       peer.funnel = parseFunnelAdvertisement(info.funnel);
       peer.memoryBlocked=info.memoryBlocked===true;peer.working=info.working===true;
       peer.profile=info.profile?nodeProfile(info.profile):undefined;
+      peer.settlementMode=info.settlementMode==='credits'?'credits':'base';
       peer.slots=info.slots?.map(slot=>{const metrics=publicMetrics(slot);return {...slot,firstTokenMs:metrics.firstTokenMs,tokensPerSecond:metrics.tokensPerSecond,averageTokensPerSecond:metrics.averageTokensPerSecond,samples:metrics.samples};});
       Object.assign(peer, { models: info.models, busy: info.busy, seen: Date.now() });
       peer.wallet = typeof info.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(info.wallet) ? info.wallet : null;
@@ -136,9 +137,14 @@ export class Mesh extends EventEmitter {
       this.active.set(msg.id, { controller, peer, instanceId:msg.job.instanceId });
       const timeout = setTimeout(() => controller.abort(), 180000);
       try {
-        for await (const part of this.run(msg.job, controller.signal)) await this.send(peer, { ...part, id: msg.id });
+        for await (const part of this.run(msg.job, controller.signal,{pubkey:peer.pubkey})) await this.send(peer, { ...part, id: msg.id });
       } catch (e) { await this.send(peer, { type: 'error', id: msg.id, error: e.message }).catch(() => {}); }
       finally { clearTimeout(timeout); this.active.delete(msg.id); }
+    } else if(msg.type==='credits'){
+      if(!this.trustedCoordinators.includes(peer.pubkey))throw new Error('Untrusted credit issuer');
+      const eventId=await this.onCredits?.(peer.pubkey,msg.event);if(eventId)await this.send(peer,{type:'credits-ack',eventId});
+    } else if(msg.type==='credits-ack'){
+      if(!this.allowedWorkers.includes(peer.pubkey))throw new Error('Untrusted credit recipient');this.onCreditAck?.(peer.pubkey,msg.eventId);
     } else if (msg.type === 'delivered') {
       if (!this.trustedCoordinators.includes(peer.pubkey)) throw new Error('Untrusted delivery acknowledgement');
       if (!msg.payment || typeof msg.payment.attestation !== 'string' || msg.payment.attestation.length !== 132 || !/^0x[a-f0-9]{64}$/i.test(msg.payment.outputHash)) throw new Error('Invalid delivery proof');
@@ -184,7 +190,7 @@ export class Mesh extends EventEmitter {
   }
   workers() {
     return [...this.byIdentity.values()].filter(peer=>this.allowedWorkers.includes(peer.pubkey)).flatMap(peer=>{
-      const base={devices:peer.devices,pubkey:peer.pubkey,funnel:peer.funnel,models:peer.models,busy:Math.max(peer.busy,peer.inFlight),seen:peer.seen,latencyMs:peer.latencyMs,
+      const base={settlementMode:peer.settlementMode,devices:peer.devices,pubkey:peer.pubkey,funnel:peer.funnel,models:peer.models,busy:Math.max(peer.busy,peer.inFlight),seen:peer.seen,latencyMs:peer.latencyMs,
         firstTokenMs:peer.firstTokenMs,tokensPerSecond:peer.tokensPerSecond,hardware:peer.hardware,loadedModel:peer.loadedModel,metrics:{...peer.metrics,...peer.instanceMetrics},
         working:peer.working,memoryBlocked:peer.memoryBlocked,profile:peer.profile,supportsTools:peer.supportsTools,contribution:peer.contribution,wallet:peer.wallet,chainId:peer.chainId,escrow:peer.escrow};
       if(!peer.slots)return [base];
@@ -193,6 +199,7 @@ export class Mesh extends EventEmitter {
         metrics:{[slot.model]:{...publicMetrics(slot),...peer.instanceMetrics?.[slot.id]}}}));
     });
   }
+  async sendCredit(worker,event){const peer=this.byIdentity.get(worker);if(!peer)return false;await this.send(peer,{type:'credits',event});return true;}
   acknowledge(worker, payment) {
     const peer = this.byIdentity.get(worker);
     if (peer) this.send(peer, { type: 'delivered', payment }).catch(error => this.emit('warning', error.message));
