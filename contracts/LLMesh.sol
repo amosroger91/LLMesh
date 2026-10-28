@@ -23,14 +23,15 @@ contract LLMeshToken is ERC20 {
     }
 }
 
-/// @notice Reserve a bounded budget; settle one ERC-20 unit per reported model token.
+/// @notice Reserve a bounded budget in half-credit units. One unit is 0.5 LLMESH.
+/// Smallest and browser models use 1 unit per token, 2B and 4B use 2, larger models use 3.
 /// Usage is attested by the trusted coordinator, not proved by the chain.
 contract LLMeshEscrow {
     using SafeERC20 for IERC20;
     IERC20 public immutable token;
     address public immutable coordinator;
-    uint256 public constant PRICE = 1 ether;
-    uint256 public constant MAX_CREDITS = 34816;
+    uint256 public constant PRICE = 0.5 ether;
+    uint256 public constant MAX_CREDITS = 104448;
     struct Job { address payer; address worker; bytes32 nostr; uint64 expires; uint8 state; uint256 amount; uint256 usedCredits; }
     mapping(bytes32 => Job) public jobs;
     event Locked(bytes32 indexed id, address indexed payer, address indexed worker, bytes32 nostr);
@@ -39,7 +40,7 @@ contract LLMeshEscrow {
     constructor(IERC20 token_, address coordinator_) {
         require(address(token_) != address(0) && coordinator_ != address(0), "zero address"); token = token_; coordinator = coordinator_;
     }
-    function version() external pure returns (uint256) { return 4; }
+    function version() external pure returns (uint256) { return 5; }
     function jobId(address payer, bytes32 clientId) public pure returns (bytes32) { return keccak256(abi.encode(payer, clientId)); }
     function lock(bytes32 clientId, bytes32 nostr, address worker, uint256 reservedCredits) external {
         bytes32 id = jobId(msg.sender, clientId);
@@ -65,7 +66,7 @@ contract LLMeshEscrow {
     }
     function claimDelivered(bytes32 id, bytes32 outputHash, uint256 credits, bytes calldata signature) external {
         require(outputHash != bytes32(0), "invalid delivery");
-        bytes32 digest = keccak256(abi.encode(block.chainid, address(this), id, outputHash, credits, "llmesh-usage-v1"));
+        bytes32 digest = keccak256(abi.encode(block.chainid, address(this), id, outputHash, credits, "llmesh-usage-v2"));
         require(ECDSA.recover(MessageHashUtils.toEthSignedMessageHash(digest), signature) == coordinator, "invalid completion receipt");
         _settle(id, credits);
     }

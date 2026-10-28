@@ -19,6 +19,11 @@ function toolCall(call) {
 }
 export function validateJob(job) {
   if (!job || !(['auto', 'llmesh-auto', ...catalog.models.map(model => model.id)].includes(job.model) || typeof job.model === 'string' && /^donated:[a-z0-9-]{1,80}$/.test(job.model))) throw new Error('Unknown model; use llmesh-auto or an ID from GET /v1/models');
+  if(job.allow_abliterated!=null&&typeof job.allow_abliterated!=='boolean'||job.allowAbliterated!=null&&typeof job.allowAbliterated!=='boolean')throw new Error('allow_abliterated must be boolean');
+  if(job.allow_abliterated!=null&&job.allowAbliterated!=null&&job.allow_abliterated!==job.allowAbliterated)throw new Error('Conflicting abliterated model options');
+  const allowAbliterated=job.allowAbliterated??job.allow_abliterated??false,abliterated=catalog.models.find(model=>model.id===job.model)?.abliterated===true;
+  if(abliterated&&!allowAbliterated)throw new Error('Abliterated models require their exact model ID and allow_abliterated: true');
+  if(allowAbliterated&&['auto','llmesh-auto'].includes(job.model))throw new Error('allow_abliterated requires an exact model ID');
   if (!Array.isArray(job.messages) || job.messages.length < 1 || job.messages.length > 256) throw new Error('messages must contain 1–256 chat messages');
   if(job.privacy!=null&&!['mesh-only','allow-third-party'].includes(job.privacy))throw new Error('privacy must be mesh-only or allow-third-party');
   if(job.allow_third_party!=null&&typeof job.allow_third_party!=='boolean')throw new Error('allow_third_party must be boolean');
@@ -58,7 +63,7 @@ export function validateJob(job) {
   const maxTokens = Math.min(limit, greeting?128:MAX_OUTPUT_TOKENS);
   if (job.complexity != null && !['auto', 'simple', 'standard', 'complex'].includes(job.complexity)) throw new Error('Invalid complexity level');
   if (job.allow_degraded != null && typeof job.allow_degraded !== 'boolean') throw new Error('allow_degraded must be boolean');
-  return { model: job.model, privacy, hardwareOnly, messages, tools: tools.map(tool => ({ type: 'function', function: { ...tool.function } })),
+  return { model: job.model, privacy, hardwareOnly, allowAbliterated, messages, tools: tools.map(tool => ({ type: 'function', function: { ...tool.function } })),
     tool_choice:greeting?'none':job.tool_choice??'auto', maxTokens, requestedMaxTokens,
     adaptation:greeting?{kind:'standalone-greeting',omittedTools,outputLimit:maxTokens}:undefined,
     contextTokens: Math.min(32768, Math.max(4096, Math.ceil((inputCharacters / 3 + maxTokens + 512) / 1024) * 1024)),

@@ -17,6 +17,7 @@
     "start": "electron .",
     "headless": "node src/cli.js",
     "test": "node --test test/*.test.js",
+    "test:live": "node scripts/live-inference-e2e.js",
     "check": "npm run check:syntax && npm run contracts:compile && npm test",
     "smoke": "electron scripts/smoke.js",
     "pack": "electron-builder --dir",
@@ -24,7 +25,9 @@
     "models:bundle": "node scripts/bundle-model.js",
     "icons:build": "electron scripts/build-icons.cjs",
     "check:syntax": "node scripts/check.js",
-    "build:web": "node scripts/build-web.js"
+    "build:web": "node scripts/build-web.js",
+    "models:verify": "node scripts/verify-vendor-assets.js",
+    "models:pin": "node scripts/pin-native-assets.js"
   },
   "engines": {
     "node": ">=22.16"
@@ -70,7 +73,9 @@
       "src/**/*",
       "models/catalog.json",
       "package.json",
-      "assets/branding/**/*"
+      "assets/branding/**/*",
+      "models/vault.json",
+      "vendor/llama.cpp/**/*"
     ],
     "asarUnpack": [
       "node_modules/**/*.node",

@@ -55,7 +55,7 @@ test('OpenAI API streams tool calls and accepts their results through the Ollama
       { role: 'tool', tool_call_id: call.id, content: [{ type: 'text', text: 'Project description' }] }
     ] })).json();
     assert.match(completed.choices[0].message.content, /project description/);
-    assert.equal(service.ledger.account(service.pubkey).balance, 100000);
+    assert.equal(service.ledger.account(service.pubkey).balance, 200000);
   } finally {
     api.closeAllConnections(); await new Promise(resolve => api.close(resolve)); await service.close(); rmSync(directory, { recursive: true, force: true });
   }

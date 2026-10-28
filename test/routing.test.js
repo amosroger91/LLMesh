@@ -35,7 +35,7 @@ test('routing uses per-model measurements, excludes busy/stale/memory-incompatib
   const busy = { ...node('busy', [medium], 1), busy: 1 }, stale = { ...node('stale', [medium], 1), seen: 0 };
   const unsafe = { ...node('unsafe', [medium], 1), hardware: { maxModelRank: 1 } };
   const route = planRoute({ model: 'llmesh-auto', messages: message('Write a function for filtering records'), maxTokens: 512 }, [cold, warm, busy, stale, unsafe]);
-  assert.equal(route.worker, 'warm'); assert.equal(route.priceUnits, 4608); assert.match(route.estimate.basis, /observed/);
+  assert.equal(route.worker, 'warm'); assert.equal(route.priceUnits, 9216); assert.match(route.estimate.basis, /observed/);
 });
 
 test('uniform pricing uses latency and avoids oversized models in near ties', () => {
@@ -47,15 +47,17 @@ test('uniform pricing uses latency and avoids oversized models in near ties', ()
   assert.equal(planRoute(job, [cheap, costly]).worker, 'costly');
   const tinyHigh = planRoute(job, [{ ...node('high', [small]), contribution: 'high' }]);
   assert.equal(tinyHigh.priceUnits, 4608);
-  assert.equal(planRoute(job, [{ ...node('low', ['qwen3.5:9b']), contribution: 'low' }]).priceUnits, 4608);
+  assert.equal(planRoute(job, [{ ...node('low', ['qwen3.5:9b']), contribution: 'low' }]).priceUnits, 9216);
 });
 
-test('reservations grow with context and output limits, never model size or contribution', () => {
+test('reservations grow with context, output limit, and the model credit rate', () => {
  const model={parametersB:0.8};
  assert.equal(quoteWork(model,message('Hello'),512).reservedCredits,4608);
  assert.equal(quoteWork(model,message('Hello'),2048).reservedCredits,6144);
  assert.equal(quoteWork(model,message('x'.repeat(20000)),2048).reservedCredits,12288);
- assert.equal(quoteWork({parametersB:27},message('Hello'),512).reservedCredits,4608);
+ assert.equal(quoteWork({parametersB:4},message('Hello'),512).reservedCredits,9216);
+ assert.equal(quoteWork({parametersB:27},message('Hello'),512).reservedCredits,13824);
+ assert.equal(quoteWork({parametersB:27},message('Hello'),512,[],undefined,{source:'web',instanceId:'web-phone'}).reservedCredits,4608);
  assert.throws(()=>quoteWork({},[],512),/unknown model/);
 });
 

@@ -1,9 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { STARTER_CREDITS, MAX_RESERVED_CREDITS } from './pricing.js';
+import { STARTER_CREDITS, CREDIT_SCALE, MAX_RESERVED_CREDITS } from './pricing.js';
 
 export class Ledger {
-  constructor(path, starter = STARTER_CREDITS) {
+  constructor(path, starter = STARTER_CREDITS * CREDIT_SCALE) {
     this.starter = starter;
     this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
@@ -13,15 +13,22 @@ export class Ledger {
     if (!this.db.prepare('PRAGMA table_info(jobs)').all().some(column => column.name === 'price')) this.db.exec('ALTER TABLE jobs ADD COLUMN price INTEGER NOT NULL DEFAULT 1');
     if (!this.db.prepare('PRAGMA table_info(jobs)').all().some(column => column.name === 'used_credits')) this.db.exec('ALTER TABLE jobs ADD COLUMN used_credits INTEGER');
     this.db.exec('CREATE TABLE IF NOT EXISTS billing_migrations (version TEXT PRIMARY KEY)');
-    if (starter === STARTER_CREDITS) this.transaction(() => {
+    if (starter === STARTER_CREDITS * CREDIT_SCALE) this.transaction(() => {
       if (this.db.prepare("SELECT version FROM billing_migrations WHERE version='token-usage-v1'").get()) return;
       // One-time local upgrade preserves spending/earnings, rather than resetting balances.
       this.db.prepare('UPDATE accounts SET balance=balance+? WHERE granted=1').run(STARTER_CREDITS - 100);
       this.db.prepare("INSERT INTO billing_migrations VALUES ('token-usage-v1')").run();
     });
     // An interrupted coordinator refunds unsettled reservations on restart.
+    // Refund in the stored unit before the half-credit scale migration.
     this.transaction(() => {
       for (const job of this.db.prepare("SELECT * FROM jobs WHERE state='reserved'").all()) this.refund(job.id);
+    });
+    if (starter === STARTER_CREDITS * CREDIT_SCALE) this.transaction(() => {
+      if (this.db.prepare("SELECT version FROM billing_migrations WHERE version='token-rate-v2'").get()) return;
+      this.db.prepare('UPDATE accounts SET balance=balance*?').run(CREDIT_SCALE);
+      this.db.prepare('UPDATE jobs SET price=price*?, used_credits=CASE WHEN used_credits IS NULL THEN NULL ELSE used_credits*? END').run(CREDIT_SCALE, CREDIT_SCALE);
+      this.db.prepare("INSERT INTO billing_migrations VALUES ('token-rate-v2')").run();
     });
   }
   transaction(fn) {

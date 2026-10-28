@@ -23,7 +23,7 @@ release binaries, browser-executed WASM conformance, Android device tests and
 physical multi-GPU runs are not established by these checks. CI definitions must
 be observed running successfully before counting their acceptance gates complete.
 
-Subsequent checks cover metered input/output credits, escrow v4 unused-budget
+Subsequent checks cover metered input/output credits, escrow v5 unused-budget
 refunds, local starter-balance migration, donated API consent/usage/quota handling,
 browser-worker routing, QR-session encryption/replay rejection and concurrent
 local/remote scheduling. Electron smoke covers the graph, donation panel and

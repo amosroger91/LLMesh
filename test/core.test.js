@@ -84,15 +84,15 @@ test('signed API streams inference, settles credits and refunds failures', async
   }
   try {
     assert.equal((await request('/v1/accounts', {})).status, 200);
-    assert.equal(service.ledger.account(pubkey).balance, 100000);
+    assert.equal(service.ledger.account(pubkey).balance, 200000);
     const job = { model: 'qwen3.5:0.8b', messages: [{ role: 'user', content: 'hi' }], max_tokens: 12, stream: true };
     let response = await request('/v1/chat/completions', job); let text = await response.text();
-    assert.match(text, /hello/); assert.match(text, /\[DONE\]/); assert.equal(service.ledger.account(pubkey).balance, 99995);
-    assert.equal(service.ledger.account(service.pubkey).balance, 100005);
+    assert.match(text, /hello/); assert.match(text, /\[DONE\]/); assert.equal(service.ledger.account(pubkey).balance, 199995);
+    assert.equal(service.ledger.account(service.pubkey).balance, 200005);
     fail = true; response = await request('/v1/chat/completions', job); text = await response.text();
-    assert.match(text, /inference failed/); assert.equal(service.ledger.account(pubkey).balance, 99995);
+    assert.match(text, /inference failed/); assert.equal(service.ledger.account(pubkey).balance, 199995);
     response = await request('/v1/chat/completions', { ...job, max_tokens: -1 });
-    assert.equal(response.status, 400); assert.equal(service.ledger.account(pubkey).balance, 99995);
+    assert.equal(response.status, 400); assert.equal(service.ledger.account(pubkey).balance, 199995);
     assert.equal((await fetch(service.apiUrl + '/v1/account')).status, 401);
   } finally { server.closeAllConnections(); await new Promise(r => server.close(r)); await service.close(); rmSync(directory, { recursive: true, force: true }); }
 });

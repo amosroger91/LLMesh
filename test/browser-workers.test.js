@@ -34,8 +34,8 @@ test('linked browser serves the real service route and accounts to the desktop i
      service.browserWorkers.report(deviceId,{type:'delta',id:message.id,text:'browser answer'});
      service.browserWorkers.report(deviceId,{type:'done',id:message.id,tokens:3,promptTokens:7});});});
    let text='';const receipt=await service.chat(service.pubkey,{model:'llmesh-auto',messages:[{role:'user',content:'hi'}],maxTokens:12},delta=>{text+=delta;});
-   assert.equal(text,'browser answer');assert.equal(receipt.credits,10);assert.equal(receipt.worker,service.pubkey);assert.equal(receipt.route.instanceId,'web-'+device);
-   assert.equal(service.ledger.account(service.pubkey).balance,100000);assert.equal(service.topology().nodes.length,2);
+   assert.equal(text,'browser answer');assert.equal(receipt.credits,5);assert.equal(receipt.worker,service.pubkey);assert.equal(receipt.route.instanceId,'web-'+device);
+   assert.equal(service.ledger.account(service.pubkey).balance,200000);assert.equal(service.topology().nodes.length,2);
    assert.equal(service.energy.status().sessions.length,0,'Browser inference is not charged as desktop electricity');
    assert.throws(()=>service.route({model:'llmesh-auto',messages:[{role:'user',content:'hi'}],tools:[{type:'function',function:{name:'test',parameters:{type:'object'}}}]}),/No idle/);
  }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
@@ -60,7 +60,7 @@ test('guest capability is consent-gated at routing and execution and respects br
  assert.equal(service.localSlots()[0].source,'community');
  assert.throws(()=>service.route({...job,privacy:'allow-third-party',messages:[{role:'user',content:'a'.repeat(20000)}]}),/No idle/);
  service.browserWorkers.on('send',({deviceId,message})=>{if(message.type==='job')setImmediate(()=>service.browserWorkers.report(deviceId,{type:'done',id:message.id,promptTokens:2,tokens:3}));});
- const receipt=await service.chat(service.pubkey,{...job,privacy:'allow-third-party'},()=>{});assert.equal(receipt.credits,5);assert.equal(service.ledger.account(service.pubkey).balance,100000);
+ const receipt=await service.chat(service.pubkey,{...job,privacy:'allow-third-party'},()=>{});assert.equal(receipt.credits,2.5);assert.equal(service.ledger.account(service.pubkey).balance,200000);
  }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
 });
 

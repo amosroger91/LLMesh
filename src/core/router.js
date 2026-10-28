@@ -1,6 +1,6 @@
 import {estimatedProviderTokens} from './providers.js';
 import { catalog } from './catalog.js';
-import { quoteWork } from './pricing.js';
+import { quoteWork, formatCredits } from './pricing.js';
 export const AUTO_MODEL = 'llmesh-auto';
 const tiers = { simple: 1, standard: 3, complex: 5 };
 
@@ -31,7 +31,7 @@ function estimate(worker, model, maxTokens) {
   const fallbackFirst = worker.source === 'third-party' ? 250 : (mode === 'cpu' ? 600 + model.parametersB * 350 : 300 + model.parametersB * 35) + (cold ? 2000 : 0);
   const legacy = worker.models.length === 1;
   const first = metric?.firstTokenMs ?? (legacy ? worker.firstTokenMs : undefined) ?? fallbackFirst;
-  const speed = metric?.tokensPerSecond ?? (legacy ? worker.tokensPerSecond : undefined) ?? (worker.source==='third-party'?100:Math.max(1, (mode === 'cpu' ? 12 : 90) / Math.sqrt(model.parametersB)));
+  const speed = metric?.averageTokensPerSecond ?? metric?.tokensPerSecond ?? (legacy ? worker.tokensPerSecond : undefined) ?? (worker.source==='third-party'?100:Math.max(1, (mode === 'cpu' ? 12 : 90) / Math.sqrt(model.parametersB)));
   const latency = worker.latencyMs ?? 100;
   // Rank expected completion time, including observed first-token delay and throughput.
   return { firstTokenMs: first + latency, completionMs: first + latency + maxTokens / speed * 1000,
@@ -53,11 +53,12 @@ export function planRoute(job, workers, now = Date.now()) {
         (job.workerKey && job.workerKey !== worker.pubkey) || (job.instanceId&&job.instanceId!==worker.instanceId)) continue;
     if(worker.requestTokenLimit!=null&&estimatedProviderTokens(job)>worker.requestTokenLimit){excluded.add(`request exceeds donated provider limit of ${worker.requestTokenLimit} tokens`);continue;}
     for (const model of models) {
+      if(model.abliterated&&(automatic||job.allowAbliterated!==true||job.model!==model.id)){excluded.add('abliterated models require an exact model ID and allow_abliterated: true');continue;}
       if (!worker.models.includes(model.id) || (!automatic && job.model !== model.id)) continue;
-      if(worker.maxContextTokens!=null&&(job.contextTokens??4096)>worker.maxContextTokens){excluded.add(`request needs ${job.contextTokens??4096} context tokens; browser limit is ${worker.maxContextTokens}`);continue;}
+      if(worker.maxContextTokens!=null&&(job.contextTokens??4096)>worker.maxContextTokens){excluded.add(`request needs ${job.contextTokens??4096} context tokens; worker limit is ${worker.maxContextTokens}`);continue;}
       if (worker.source !== 'third-party' && Number.isFinite(worker.hardware?.maxModelRank) && model.rank > worker.hardware.maxModelRank) continue;
-      const pricing = quoteWork(model, job.messages, job.maxTokens ?? 512, job.tools, job.contextTokens);
-      if(worker.creditBudget!=null&&pricing.reservedCredits>worker.creditBudget){excluded.add(`donation has ${worker.creditBudget} credits remaining but this request needs a refundable reservation of ${pricing.reservedCredits}`);continue;}
+      const pricing = quoteWork(model, job.messages, job.maxTokens ?? 512, job.tools, job.contextTokens, worker);
+      if(worker.creditBudget!=null&&pricing.reservedTokens>worker.creditBudget){excluded.add(`donation has ${worker.creditBudget} tokens remaining but this request reserves ${pricing.reservedTokens}`);continue;}
       for(let slot=0;slot<(worker.free??1);slot++)options.push({ worker, model, pricing, estimate: estimate(worker, model, job.maxTokens ?? 512) });
     }
   }
@@ -74,7 +75,7 @@ export function planRoute(job, workers, now = Date.now()) {
     }
   }
   if (!options.length) throw new Error('No available trusted worker for the requested model and payment network');
-  // Every model has the same per-token rate. A refundable reservation is not a price penalty.
+  // Larger models reserve more credits. Routing still prefers measured latency over price.
   for (const option of options) {
     option.estimate.fitPenaltyMs = option.worker.source==='third-party'?0:Math.max(0, option.model.rank - complexity.minimumRank) * 100;
     option.estimate.routingScore = option.estimate.score + option.estimate.fitPenaltyMs - (option.worker.source==='third-party'?150:0);
@@ -85,7 +86,7 @@ export function planRoute(job, workers, now = Date.now()) {
     estimate: best.estimate, eligibleOptions: options.length,
     reason: `${complexity.level} request → ${best.model.id} on ${best.worker.local ? 'your node' : best.worker.pubkey.slice(0, 12) + '…'}; ${Math.round(best.estimate.firstTokenMs)} ms estimated first token (${best.estimate.basis}).` +
       (job.adaptation?.omittedTools?' Standalone greeting: unused coding tools omitted; system instructions preserved.':'')+
-      ` 1 credit per input/output token; ${best.pricing.reservedCredits} credits reserved, unused credits returned.` +
+      ` ${formatCredits(best.pricing.atomsPerToken)} credit${best.pricing.atomsPerToken === 2 ? '' : 's'} per input/output token; ${formatCredits(best.pricing.reservedCredits)} credits reserved, unused credits returned.` +
       (best.worker.source==='third-party'?' Prompt sent to a donated third-party API with your permission.':best.worker.source==='community'?' Prompt sent to a public community browser with your permission.':'') +
       (degraded ? ' Selected model is below the recommended capability tier.' : '') };
 }

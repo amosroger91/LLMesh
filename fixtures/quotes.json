@@ -14,15 +14,17 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "token-usage-v1",
+      "version": "token-rate-v2",
       "priceUnits": 4608,
       "reservedCredits": 4608,
-      "creditsPerToken": 1,
+      "reservedTokens": 4608,
+      "atomsPerToken": 1,
+      "creditsPerToken": 0.5,
       "parametersB": 0.8,
       "maxTokens": 512,
       "contextTokens": 4096,
       "inputCharacters": 56,
-      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
+      "basis": "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens"
     }
   },
   {
@@ -40,15 +42,17 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "token-usage-v1",
-      "priceUnits": 4608,
-      "reservedCredits": 4608,
+      "version": "token-rate-v2",
+      "priceUnits": 9216,
+      "reservedCredits": 9216,
+      "reservedTokens": 4608,
+      "atomsPerToken": 2,
       "creditsPerToken": 1,
       "parametersB": 9,
       "maxTokens": 512,
       "contextTokens": 4096,
       "inputCharacters": 59,
-      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
+      "basis": "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens"
     }
   },
   {
@@ -66,15 +70,17 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "token-usage-v1",
-      "priceUnits": 4608,
-      "reservedCredits": 4608,
-      "creditsPerToken": 1,
+      "version": "token-rate-v2",
+      "priceUnits": 13824,
+      "reservedCredits": 13824,
+      "reservedTokens": 4608,
+      "atomsPerToken": 3,
+      "creditsPerToken": 1.5,
       "parametersB": 27,
       "maxTokens": 512,
       "contextTokens": 4096,
       "inputCharacters": 56,
-      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
+      "basis": "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens"
     }
   },
   {
@@ -92,15 +98,17 @@
       "maxTokens": 1025
     },
     "expected": {
-      "version": "token-usage-v1",
-      "priceUnits": 5121,
-      "reservedCredits": 5121,
+      "version": "token-rate-v2",
+      "priceUnits": 10242,
+      "reservedCredits": 10242,
+      "reservedTokens": 5121,
+      "atomsPerToken": 2,
       "creditsPerToken": 1,
       "parametersB": 2,
       "maxTokens": 1025,
       "contextTokens": 4096,
       "inputCharacters": 56,
-      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
+      "basis": "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens"
     }
   },
   {
@@ -118,15 +126,17 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "token-usage-v1",
-      "priceUnits": 4608,
-      "reservedCredits": 4608,
+      "version": "token-rate-v2",
+      "priceUnits": 9216,
+      "reservedCredits": 9216,
+      "reservedTokens": 4608,
+      "atomsPerToken": 2,
       "creditsPerToken": 1,
       "parametersB": 2,
       "maxTokens": 512,
       "contextTokens": 4096,
       "inputCharacters": 6054,
-      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
+      "basis": "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens"
     }
   },
   {
@@ -144,15 +154,17 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "token-usage-v1",
-      "priceUnits": 4608,
-      "reservedCredits": 4608,
+      "version": "token-rate-v2",
+      "priceUnits": 9216,
+      "reservedCredits": 9216,
+      "reservedTokens": 4608,
+      "atomsPerToken": 2,
       "creditsPerToken": 1,
       "parametersB": 2,
       "maxTokens": 512,
       "contextTokens": 4096,
       "inputCharacters": 6055,
-      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
+      "basis": "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens"
     }
   },
   {
@@ -170,15 +182,17 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "token-usage-v1",
-      "priceUnits": 4608,
-      "reservedCredits": 4608,
+      "version": "token-rate-v2",
+      "priceUnits": 9216,
+      "reservedCredits": 9216,
+      "reservedTokens": 4608,
+      "atomsPerToken": 2,
       "creditsPerToken": 1,
       "parametersB": 2,
       "maxTokens": 512,
       "contextTokens": 4096,
       "inputCharacters": 6056,
-      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
+      "basis": "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens"
     }
   },
   {
@@ -196,15 +210,17 @@
       "maxTokens": 2048
     },
     "expected": {
-      "version": "token-usage-v1",
-      "priceUnits": 7168,
-      "reservedCredits": 7168,
+      "version": "token-rate-v2",
+      "priceUnits": 14336,
+      "reservedCredits": 14336,
+      "reservedTokens": 7168,
+      "atomsPerToken": 2,
       "creditsPerToken": 1,
       "parametersB": 9,
       "maxTokens": 2048,
       "contextTokens": 5120,
       "inputCharacters": 6055,
-      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
+      "basis": "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens"
     }
   },
   {

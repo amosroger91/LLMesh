@@ -81,6 +81,9 @@ else {
     handle('status', () => service.status());
     handle('funnel-apply', value => applyFunnel(value ?? {}, true));
     handle('funnel-probe', () => service.funnel?.probe?.() ?? Promise.resolve({ provider: 'off', state: 'off', publicUrl: null }));
+    handle('runtime-engine',value=>service.configureRuntimeEngine(value));
+    handle('restart-app',()=>{if(service.busy||service.requests||service.installing)throw new Error('Finish active work before restarting');setTimeout(()=>{app.relaunch();app.quit();},100);return true;});
+    handle('abliterated-serving',enabled=>service.configureAbliterated(enabled));
     handle('privacy', value => service.configurePrivacy(value));
     handle('node-profile',value=>service.configureNodeProfile(value));
     const saveDonations=()=>writeFileSync(donationsPath,safeStorage.encryptString(JSON.stringify(service.providers.configuration())));

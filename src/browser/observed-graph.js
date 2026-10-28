@@ -18,7 +18,7 @@ export class ObservedGraph {
     };
     for(const session of active.slice(0,24)){
       if(session.kind==='desktop'&&Array.isArray(session.providers))for(const provider of session.providers.filter(provider=>provider.state==='ready'||provider.busy===true).slice(0,8)){
-        const id=session.id+':'+provider.id;nodes.push({...provider,id,kind:'provider',parent:session.id});ids.add(id);edge(session.id,id,provider.traffic);
+        const id=session.id+':'+provider.id;nodes.push({...provider,id,kind:'provider',parent:session.id,ready:provider.state==='ready'});ids.add(id);edge(session.id,id,provider.traffic);
       }
       if(session.kind==='browser'&&session.connected&&typeof session.gatewayId==='string')edge(session.gatewayId,session.id,session.traffic);
     }

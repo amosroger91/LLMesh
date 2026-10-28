@@ -45,7 +45,7 @@ jobs:
       - env:
           GITHUB_TOKEN: ${{ github.token }}
           MODEL_ASSET: ${{ matrix.asset }}
-        run: node scripts/model-vault.js upload "$MODEL_ASSET"
+        run: node scripts/model-vault-retry.js "$MODEL_ASSET"
   complete:
     needs: archive
     runs-on: ubuntu-latest

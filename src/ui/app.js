@@ -1,3 +1,5 @@
+import {modelCapability} from '../browser/node-performance.js';
+import { formatCredits } from '../core/pricing.js';
 import {responseView,splitThinking} from './response-view.js';
 import {donationControls} from './donations.js';
 import {browserBridge} from './browser-bridge.js';
@@ -31,7 +33,7 @@ function renderEnergy(energy) {
 }
 function renderPayments(payment) {
   $('wallet-address').textContent = payment.address ?? 'Unavailable';
-  $('balance').textContent = payment.configured ? Number(payment.balance ?? 0).toFixed(2) : String(state.account?.balance ?? 0);
+  $('balance').textContent = payment.configured ? Number(payment.balance ?? 0).toFixed(2) : formatCredits(state.account?.balance ?? 0);
   $('balance-label').textContent = payment.configured ? `${payment.chainId === 8453 ? 'Base' : 'Test network'} · earned from completed work` : 'Local self-service credits · spend and earn back';
   $('wallet-status').textContent = payment.configured ? `${payment.balance} LLMESH · ${Number(payment.nativeBalance).toFixed(6)} ETH gas · ${payment.isCoordinator ? 'Coordinator wallet' : 'Worker receiving wallet'}` : payment.error ?? 'Self-served requests reserve local credits and return them on completion. Base payments are required for other nodes.';
   $('wallet-jobs').replaceChildren();
@@ -42,6 +44,10 @@ function renderPayments(payment) {
 }
 async function refresh() {
   state = await api.status();
+  if(!$('runtime-engine').disabled)$('runtime-engine').value=state.pendingRuntimeEngine??state.runtimeEngine??'ollama';
+  $('restart-runtime').classList.toggle('hidden',!state.pendingRuntimeEngine||state.pendingRuntimeEngine===state.runtimeEngine);
+  $('abliterated-status').textContent=state.abliteratedSetup?.message??(state.abliteratedServing?'Preparing additional worker':'Disabled');
+  if(!$('abliterated-serving').disabled)$('abliterated-serving').checked=state.abliteratedServing===true;
   if(!privacySaving)$('privacy-mode').value=state.inferencePrivacy??'mesh-only';
   $('memory').textContent = `${state.hardware.freeRamGB.toFixed(1)} GB free RAM`;
   $('online').textContent = state.topology?.nodes.filter(node=>node.kind!=='provider').length ?? new Set(state.workers.map(worker=>worker.pubkey)).size + 1;
@@ -56,7 +62,9 @@ async function refresh() {
   $('recommendation').textContent = profile?.reason ?? state.recommendation.reason;
   $('assigned-model').textContent = chosen ?? 'Waiting for free memory';
   $('contribution-summary').textContent = (profile?.reason ?? '') + (state.pendingContribution ? ` ${state.pendingContribution.toUpperCase()} queued until current work finishes.` : '');
-  $('contribution-badge').textContent = `${state.contributionLevel.toUpperCase()} · 1 CREDIT / MODEL TOKEN`;
+  const rate = profile?.reward;
+  const rateText = rate == null ? '' : ` · ${Number.isInteger(rate) ? rate : rate.toFixed(1)} CREDIT${rate === 1 ? '' : 'S'} / TOKEN`;
+  $('contribution-badge').textContent = `${state.contributionLevel.toUpperCase()}${rateText}`;
   document.querySelectorAll('[data-level]').forEach(button => button.classList.toggle('selected', button.dataset.level === (state.pendingContribution ?? state.contributionLevel)));
   $('setup').textContent = state.setup.message;
   $('setup-retry-actions').classList.toggle('hidden', state.setup.state !== 'error');
@@ -74,8 +82,8 @@ async function refresh() {
   $('worker-list').replaceChildren();
   for (const worker of state.workers) textRow($('worker-list'), short(worker.pubkey), `${worker.busy ? 'Busy' : 'Idle'} · ${worker.latencyMs.toFixed(0)} ms RTT · ${worker.wallet ? 'wallet ready' : 'no wallet'}${worker.funnel?.url ? ` · funnel ${worker.funnel.url}` : ''}`);
   if (!state.workers.length) $('worker-list').textContent = 'No trusted inference workers connected.';
-  const speeds=[...(state.instances??[]).map(item=>({...item,name:'Your desktop'})),...(state.browserDevices??[]),...(state.donations??[]).map(item=>({...item,name:item.provider})),...state.workers.flatMap(worker=>worker.models.map(model=>({id:worker.instanceId??worker.pubkey,name:worker.profile?.name??short(worker.pubkey),model,metrics:worker.metrics?.[model]})))].map(item=>({...item,measurement:item.metrics??item})).filter(item=>Number.isFinite(item.measurement.tokensPerSecond)&&item.measurement.tokensPerSecond>0).sort((a,b)=>b.measurement.tokensPerSecond-a.measurement.tokensPerSecond);
-  $('speed-ranking').replaceChildren();speeds.forEach((item,index)=>textRow($('speed-ranking'),`${index+1}. ${item.name} · ${item.model}`,`${item.measurement.tokensPerSecond.toFixed(1)} tokens/s · ${Math.round(item.measurement.firstTokenMs??0)} ms first token`));
+  const speeds=[...(state.instances??[]).map(item=>({...item,name:'Your desktop'})),...(state.browserDevices??[]),...(state.donations??[]).map(item=>({...item,name:item.provider})),...state.workers.flatMap(worker=>worker.models.map(model=>({id:worker.instanceId??worker.pubkey,name:worker.profile?.name??short(worker.pubkey),model,metrics:worker.metrics?.[model]})))].map(item=>({...item,capability:modelCapability(item.model,item.modelInfo?.rank),measurement:{...(item.metrics??item),tokensPerSecond:(item.metrics??item).averageTokensPerSecond??(item.metrics??item).tokensPerSecond}})).filter(item=>Number.isFinite(item.measurement.tokensPerSecond)&&item.measurement.tokensPerSecond>0).sort((a,b)=>b.capability-a.capability||b.measurement.tokensPerSecond-a.measurement.tokensPerSecond);
+  $('speed-ranking').replaceChildren();speeds.forEach((item,index)=>textRow($('speed-ranking'),`${index+1}. ${item.name} · ${item.model}`,`${item.measurement.tokensPerSecond.toFixed(1)} avg tokens/s · tier ${item.capability||'unknown'} · ${Math.round(item.measurement.firstTokenMs??0)} ms first token`));
   if(!speeds.length)$('speed-ranking').textContent='Complete a request to measure worker speed.';
   renderDonations?.(state); renderEnergy(state.energy); renderPayments(state.payments);
   if (first) {
@@ -99,6 +107,9 @@ document.querySelectorAll('[data-view]').forEach(button => { button.onclick = ()
   document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav === button));
   $('page-title').textContent = button.textContent.trim(); localStorage.setItem('llmesh-view', button.dataset.view);
 }; });
+$('runtime-engine').onchange=async()=>{const control=$('runtime-engine');control.disabled=true;try{await api.nativeRuntime(control.value);await refresh();$('runtime-note').textContent='Runtime choice saved. Restart LLMesh to apply.';}catch(cause){control.value=state.pendingRuntimeEngine??state.runtimeEngine??'ollama';error(cause);}finally{control.disabled=false;}};
+bind('restart-runtime',()=>api.restart());
+$('abliterated-serving').onchange=async()=>{const control=$('abliterated-serving');control.disabled=true;try{await api.abliteratedServing(control.checked);await refresh();}catch(cause){control.checked=state.abliteratedServing===true;error(cause);}finally{control.disabled=false;}};
 $('privacy-mode').onchange=async()=>{
   const select=$('privacy-mode'),value=select.value;privacySaving=true;select.disabled=true;$('error').textContent='';
   try{await api.privacy(value);state.inferencePrivacy=value;$('privacy-note').textContent='Saved automatically · applies to desktop requests and API clients that omit privacy. Explicit request settings take precedence.';}
@@ -191,7 +202,7 @@ async function initialize() {
   companionHistory = await store.get('companion-history') ?? [];
   for (const message of companionHistory) { const row = document.createElement('div'); row.className = 'chat-message'; if(message.role==='assistant'){const view=responseView(row);view.appendData(message.content);view.finish();}else row.textContent=message.content; $('companion-history').append(row); }
   setInterval(() => refresh().catch(error), 1500);
-  const savedView = localStorage.getItem('llmesh-view'); document.querySelector(`[data-view="${['overview', 'companion', 'network', 'donations', 'energy', 'wallet'].includes(savedView) ? savedView : 'overview'}"]`)?.click();
+  const savedView = localStorage.getItem('llmesh-view'); document.querySelector(`[data-view="${['overview', 'companion', 'network', 'donations', 'energy', 'wallet', 'settings'].includes(savedView) ? savedView : 'overview'}"]`)?.click();
   document.body.dataset.ready = 'true';
 }
 initialize().catch(error);

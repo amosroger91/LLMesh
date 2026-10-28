@@ -37,14 +37,14 @@ test('donated APIs require per-request consent, stream actual usage, hide keys a
    await assert.rejects(async()=>{for await(const _part of service.runLocal({...request,model:'donated:test-donor',instanceId:'api-test-donor',privacy:'mesh-only'},AbortSignal.timeout(1000))){/* consume */}},/did not allow/);
    assert.equal(requests.length,0,'Worker-side privacy enforcement also prevents direct donated-runtime dispatch');
    let text='';const receipt=await service.chat(service.pubkey,{...request,privacy:'allow-third-party'},delta=>{text+=delta;});
-   assert.equal(text,'donated answer');assert.equal(receipt.credits,14);assert.equal(receipt.route.source,'third-party');assert.equal(receipt.route.upstreamModel,'fast-70b');
-   assert.equal(requests.length,1);assert.equal(requests[0].model,'fast-70b');assert.equal(service.ledger.account(service.pubkey).balance,100000,'Self donation cannot create credits');
+   assert.equal(text,'donated answer');assert.equal(receipt.credits,21);assert.equal(receipt.route.source,'third-party');assert.equal(receipt.route.upstreamModel,'fast-70b');
+   assert.equal(requests.length,1);assert.equal(requests[0].model,'fast-70b');assert.equal(service.ledger.account(service.pubkey).balance,200000,'Self donation cannot create credits');
    let status=service.status().donations[0];assert.equal(status.usage.input_tokens,10);assert.equal(status.usage.output_tokens,4);assert.equal(status.calls[0].reported_model,'fast-70b-v2');
    assert.equal(JSON.stringify(service.status()).includes('private-donor-key'),false);
    const payer='d'.repeat(64);service.ledger.register(payer);await service.chat(payer,{...request,privacy:'allow-third-party'},()=>{});
-   assert.equal(service.ledger.account(payer).balance,99986);assert.equal(service.ledger.account(service.pubkey).balance,100014,'Donor earns only for serving another account');
+   assert.equal(service.ledger.account(payer).balance,199958);assert.equal(service.ledger.account(service.pubkey).balance,200042,'Donor earns only for serving another account');
    mode='missing-usage';await assert.rejects(service.chat(payer,{...request,privacy:'allow-third-party',model:'donated:test-donor'},()=>{}),/usage/);
-   status=service.providers.snapshot()[0];assert.equal(status.state,'cooldown');assert.equal(status.usage.input_tokens,20);assert.equal(status.usage.output_tokens,8);assert.ok(status.usage.uncertain_tokens>0);assert.equal(service.ledger.account(payer).balance,99986);
+   status=service.providers.snapshot()[0];assert.equal(status.state,'cooldown');assert.equal(status.usage.input_tokens,20);assert.equal(status.usage.output_tokens,8);assert.ok(status.usage.uncertain_tokens>0);assert.equal(service.ledger.account(payer).balance,199958);
    const uncertainBefore429=status.usage.uncertain_tokens;service.providers.configure([config]);mode='limit';await assert.rejects(service.chat(payer,{...request,privacy:'allow-third-party',model:'donated:test-donor'},()=>{}),/429/);assert.equal(service.providers.snapshot()[0].free,0);assert.equal(service.providers.snapshot()[0].usage.uncertain_tokens,uncertainBefore429);
    assert.equal(service.route({...request,privacy:'allow-third-party'}).source,'mesh','Rate-limited API withdraws; normal routing can use local hardware');
    assert.throws(()=>validateJob({...request,privacy:'mesh-only',allow_third_party:true}),/Conflicting/);
@@ -60,7 +60,7 @@ test('HTTP 413 learns provider limits, keeps small jobs available, and safely re
  const config={id:'reject-large',kind:'custom',baseUrl:`http://127.0.0.1:${upstream.address().port}/v1`,apiKey:'secret-key',model:'fast-70b',dailyLimit:100000,freeTierConfirmed:true};
  const job={model:'llmesh-auto',privacy:'allow-third-party',complexity:'simple',messages:[{role:'user',content:'x'.repeat(9000)}],maxTokens:12};
  try{service.ready=['qwen3.5:0.8b'];service.providers.configure([config]);let output='';const receipt=await service.chat(service.pubkey,job,delta=>{output+=delta;});assert.equal(output,'native fallback');assert.equal(receipt.model,'qwen3.5:0.8b');assert.equal(calls,1);
- const status=service.providers.snapshot()[0];assert.equal(status.state,'ready');assert.equal(status.requestTokenLimit,1000);assert.equal(status.usage.uncertain_tokens,0);assert.equal(status.usage.errors,1);assert.equal(service.ledger.account(service.pubkey).balance,100000);assert.match(status.error,/Token limit 1000/);assert.equal(JSON.stringify(status).includes('private prompt'),false);assert.equal(JSON.stringify(status).includes('secret-key'),false);
+ const status=service.providers.snapshot()[0];assert.equal(status.state,'ready');assert.equal(status.requestTokenLimit,1000);assert.equal(status.usage.uncertain_tokens,0);assert.equal(status.usage.errors,1);assert.equal(service.ledger.account(service.pubkey).balance,200000);assert.match(status.error,/Token limit 1000/);assert.equal(JSON.stringify(status).includes('private prompt'),false);assert.equal(JSON.stringify(status).includes('secret-key'),false);
  assert.equal(service.route(job).source,'mesh','Known oversized request avoids donor');assert.equal(service.route({...job,model:'donated:reject-large',messages:[{role:'user',content:'hi'}]}).source,'third-party');
  rejectLarge=false;await service.chat(service.pubkey,{...job,model:'donated:reject-large',messages:[{role:'user',content:'hi'}]},()=>{});assert.equal(calls,2);
  await service.close();service=new Service({directory,secret,network:false,ollama:{close(){}}});service.providers.configure([config]);assert.equal(service.providers.snapshot()[0].requestTokenLimit,1000,'Learned limit survives restart');
@@ -72,7 +72,7 @@ test('companion hardware-only policy excludes donated APIs even with saved exter
  const job={model:'llmesh-auto',messages:[{role:'user',content:'hello'}],maxTokens:12};
  try{service.configurePrivacy('allow-third-party');service.providers.configure([{id:'fast-api',kind:'custom',baseUrl:'http://127.0.0.1:1/v1',apiKey:'unused-key',model:'fast-70b',dailyLimit:100000,freeTierConfirmed:true}]);service.ready=['qwen3.5:0.8b'];service.modelMetrics['qwen3.5:0.8b']={firstTokenMs:2000,tokensPerSecond:10};
  assert.equal(service.route(job).source,'third-party');assert.equal(service.route({...job,hardware_only:true}).source,'mesh');
- const receipt=await service.chat(service.pubkey,{...job,hardwareOnly:true},()=>{});assert.equal(receipt.route.hardwareOnly,true);assert.equal(receipt.route.source,'mesh');assert.equal(service.ledger.account(service.pubkey).balance,100000);
+ const receipt=await service.chat(service.pubkey,{...job,hardwareOnly:true},()=>{});assert.equal(receipt.route.hardwareOnly,true);assert.equal(receipt.route.source,'mesh');assert.equal(service.ledger.account(service.pubkey).balance,200000);
  service.ready=[];assert.throws(()=>service.route({...job,hardwareOnly:true}),/cannot use donated APIs/);
  await assert.rejects(async()=>{for await(const _part of service.runLocal({...job,model:'donated:fast-api',instanceId:'api-fast-api',privacy:'allow-third-party',hardwareOnly:true},AbortSignal.timeout(1000))){/* consume */}},/Hardware-only/);
  await assert.rejects(async()=>{for await(const _part of service.providers.chat({...job,model:'donated:fast-api',instanceId:'api-fast-api',privacy:'allow-third-party',hardwareOnly:true},AbortSignal.timeout(1000))){/* consume */}},/Hardware-only/);

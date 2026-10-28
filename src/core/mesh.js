@@ -1,4 +1,4 @@
-import {recordInference} from '../shared/inference-metrics.js';
+import {recordInference,publicMetrics} from '../shared/inference-metrics.js';
 import {nodeProfile} from '../shared/node-profile.js';
 import Hyperswarm from 'hyperswarm';
 import { EventEmitter } from 'node:events';
@@ -114,7 +114,7 @@ export class Mesh extends EventEmitter {
       peer.funnel = parseFunnelAdvertisement(info.funnel);
       peer.memoryBlocked=info.memoryBlocked===true;peer.working=info.working===true;
       peer.profile=info.profile?nodeProfile(info.profile):undefined;
-      peer.slots=info.slots;
+      peer.slots=info.slots?.map(slot=>{const metrics=publicMetrics(slot);return {...slot,firstTokenMs:metrics.firstTokenMs,tokensPerSecond:metrics.tokensPerSecond,averageTokensPerSecond:metrics.averageTokensPerSecond,samples:metrics.samples};});
       Object.assign(peer, { models: info.models, busy: info.busy, seen: Date.now() });
       peer.wallet = typeof info.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(info.wallet) ? info.wallet : null;
       peer.chainId = info.chainId; peer.escrow = info.escrow;
@@ -190,7 +190,7 @@ export class Mesh extends EventEmitter {
       if(!peer.slots)return [base];
       return peer.slots.map(slot=>({...base,instanceId:slot.id,models:[slot.model],total:slot.total,
           requestTokenLimit:slot.requestTokenLimit,maxContextTokens:slot.maxContextTokens,source:slot.source,creditBudget:slot.creditBudget,modelCatalog:slot.source==='third-party'?[slot.modelInfo]:[],supportsTools:slot.supportsTools,free:Math.max(0,slot.free-(peer.instanceInFlight?.get(slot.id)??0)),busy:slot.free>(peer.instanceInFlight?.get(slot.id)??0)?0:1,
-        metrics:{[slot.model]:{firstTokenMs:slot.firstTokenMs,tokensPerSecond:slot.tokensPerSecond,...peer.instanceMetrics?.[slot.id]}}}));
+        metrics:{[slot.model]:{...publicMetrics(slot),...peer.instanceMetrics?.[slot.id]}}}));
     });
   }
   acknowledge(worker, payment) {

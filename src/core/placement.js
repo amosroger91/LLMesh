@@ -4,12 +4,12 @@ export const MEMORY_FACTOR = 0.8;
 export function gpuBackend(gpu) {
   return gpu.backend ?? (/nvidia/i.test(gpu.vendor ?? gpu.name ?? '') ? 'cuda' : /amd|radeon/i.test(gpu.vendor ?? gpu.name ?? '') ? 'rocm' : 'vulkan');
 }
-export function planPlacement(hardware, { level = 'medium', gpuSelection = 'auto', mode = 'auto', catalog = defaultCatalog, parallel = 1, basePort = 11500, displayGpu = 0, forceMemory = false, minimumRank = 1, minimumFraction = 0, preferQuantized = false, keepAlive } = {}) {
+export function planPlacement(hardware, { level = 'medium', gpuSelection = 'auto', mode = 'auto', catalog = defaultCatalog, parallel = 1, basePort = 11500, displayGpu = 0, forceMemory = false, minimumRank = 1, minimumFraction = 0, preferQuantized = false, keepAlive, fixedModel } = {}) {
   if (!CONTRIBUTION[level]) throw new Error('Choose low, medium, or high contribution');
   if (!['auto', 'split', 'replicate'].includes(mode)) throw new Error('Placement must be auto, split, or replicate');
   if (!Number.isInteger(parallel) || parallel < 1 || parallel > 4) throw new Error('parallel must be 1–4');
   if (gpuSelection !== 'auto' && gpuSelection !== 'all' && !Array.isArray(gpuSelection)) throw new Error('gpus must be auto, all, or an array of GPU IDs');
-  const policy = {...CONTRIBUTION[level],fraction:Math.max(CONTRIBUTION[level].fraction,minimumFraction)}, variants=new Set(catalog.models.filter(model=>model.variantOf).map(model=>model.variantOf)), models = catalog.models.filter(model=>model.rank>=minimumRank&&(preferQuantized?!variants.has(model.id):model.automatic!==false)).sort((a,b) => a.rank - b.rank);
+  const policy = {...CONTRIBUTION[level],fraction:Math.max(CONTRIBUTION[level].fraction,minimumFraction)}, variants=new Set(catalog.models.filter(model=>model.variantOf).map(model=>model.variantOf)), models = catalog.models.filter(model=>model.rank>=minimumRank&&(fixedModel?model.id===fixedModel:!model.abliterated&&(preferQuantized?!variants.has(model.id):model.automatic!==false))).sort((a,b) => a.rank - b.rank);
   const minimumParameters=models[0]?.parametersB??0;
   const instances = [], warnings = forceMemory?['Free-memory checks overridden for this attempt; runtime may still reject the load or use system paging.']:[];
   const ram = forceMemory ? hardware.ramGB : Math.min(hardware.ramGB, hardware.freeRamGB);

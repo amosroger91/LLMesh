@@ -1,3 +1,4 @@
+import './verify-vendor-assets.js';
 import {build} from 'esbuild';
 import {mkdirSync,copyFileSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';

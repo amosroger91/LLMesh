@@ -1,3 +1,4 @@
+import {publicMetrics} from '../shared/inference-metrics.js';
 import {nodeProfile} from '../shared/node-profile.js';
 import {generateSecretKey,finalizeEvent,verifyEvent,getPublicKey} from 'nostr-tools/pure';
 export const RELAYS=['wss://relay.damus.io','wss://nos.lol'];
@@ -18,6 +19,9 @@ export class Presence {
     const validTraffic=traffic=>traffic==null||['requests','responses'].every(key=>Number.isSafeInteger(traffic[key])&&traffic[key]>=0);
     if(!validTraffic(value.traffic)||value.gatewayId!=null&&!/^[a-f0-9]{64}$/.test(value.gatewayId))return;
     if(value.providers!=null&&(!Array.isArray(value.providers)||value.providers.length>8||!value.providers.every(provider=>typeof provider.id==='string'&&provider.id.length<=80&&typeof provider.name==='string'&&provider.name.length<=60&&typeof provider.model==='string'&&provider.model.length<=100&&validTraffic(provider.traffic))))return;
+    value.metrics=publicMetrics(value.metrics);
+    if(value.instances!=null){if(!Array.isArray(value.instances)||value.instances.length>16||!value.instances.every(item=>typeof item.id==='string'&&item.id.length<=100&&typeof item.model==='string'&&item.model.length<=100))return;value.instances=value.instances.map(item=>({id:item.id,model:item.model,rank:Number.isInteger(item.rank)&&item.rank>=1&&item.rank<=5?item.rank:undefined,metrics:publicMetrics(item.metrics)}));}
+    for(const provider of value.providers??[])provider.metrics=publicMetrics(provider.metrics);
     const old=this.entries.get(event.pubkey);if(old&&old.time>=event.created_at)return;
     if(!old&&this.entries.size>=500)return;this.entries.set(event.pubkey,{...value,id:event.pubkey,time:event.created_at});this.refresh();
   }

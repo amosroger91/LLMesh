@@ -1,4 +1,4 @@
-import {recordInference} from '../../shared/inference-metrics.js';
+import {recordInference,benchmarkInference,BENCHMARK_MESSAGES} from '../../shared/inference-metrics.js';
 import { EventEmitter } from 'node:events';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -43,7 +43,9 @@ export class OllamaPool extends EventEmitter {
         for (let index=0;index<instance.candidates.length;index++) {
           instance.model=instance.candidates[index]; instance.client.profile={...instance,mode:instance.backend==='cpu'?'cpu':'gpu'};
           try {
-            await this.installOnce(instance,progress); instance.state='ready'; instance.loadedModel=instance.model.id; instance.error=null; break;
+            await this.installOnce(instance,progress);
+            if(this.options.calibrate!==false){instance.state='calibrating';progress({status:instance.id+': measuring token speed'});try{await benchmarkInference(instance.client.chat({model:instance.model.id,messages:BENCHMARK_MESSAGES,maxTokens:64,contextTokens:4096},AbortSignal.timeout(120000)),instance.metrics);instance.metrics.calibrated=true;}catch(error){instance.metrics.benchmarkError=error.message;progress({status:instance.id+': benchmark unavailable; speed will be measured on real requests'});}}
+            instance.state='ready'; instance.loadedModel=instance.model.id; instance.error=null; break;
           } catch(error) {
             instance.error=error.message; if(this.closed||instance.client.installController?.signal.aborted||index===instance.candidates.length-1)throw error;
             progress({status:`${instance.id}: ${error.message}; trying a smaller model`});
@@ -113,9 +115,9 @@ export class OllamaPool extends EventEmitter {
   }
   snapshot(){return this.instances.map(({client:_client,child:_child,restartTimer:_timer,...instance})=>({...instance,model:instance.model.id,free:instance.state==='ready'?Math.max(0,instance.slots-instance.inFlight):0}));}
   async *chat(job,signal){const instance=this.instances.find(item=>(!job.instanceId||item.id===job.instanceId)&&item.model.id===job.model&&item.state==='ready'&&item.inFlight<item.slots);
-    if(!instance)throw Object.assign(new Error('No runtime slot available'),{retryable:true});instance.inFlight++;const started=performance.now();let firstAt;
-    try{for await(const part of instance.client.chat(job,signal)){if(!firstAt&&['delta','tool_calls'].includes(part.type)){firstAt=performance.now();}
-      if(part.type==='done'&&firstAt)recordInference(instance.metrics,{firstTokenMs:firstAt-started,tokens:part.tokens,durationMs:performance.now()-started});yield part;}
+    if(!instance)throw Object.assign(new Error('No runtime slot available'),{retryable:true});instance.inFlight++;const started=performance.now();let firstAt,buffered;
+    try{for await(const part of instance.client.chat(job,signal)){if(!firstAt&&['delta','tool_calls'].includes(part.type)){firstAt=performance.now();buffered=part.type==='tool_calls';}
+      if(part.type==='done'&&firstAt)recordInference(instance.metrics,{firstTokenMs:firstAt-started,tokens:part.tokens,durationMs:performance.now()-started,buffered});yield part;}
     }finally{instance.inFlight--;}
   }
   async installed(){const lists=await Promise.all(this.instances.map(instance=>instance.client?.installed().catch(()=>[])??[]));return [...new Set(lists.flat())];}

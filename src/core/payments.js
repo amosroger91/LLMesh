@@ -1,4 +1,4 @@
-import { MAX_RESERVED_CREDITS, usageCredits } from './pricing.js';
+import { CREDIT_SCALE, MAX_RESERVED_CREDITS, usageCredits, USAGE_DOMAIN } from './pricing.js';
 import { Contract, JsonRpcProvider, Wallet, AbiCoder, getBytes, keccak256, randomBytes, formatEther, isAddress, FetchRequest, parseEther, MaxUint256, verifyMessage } from 'ethers';
 const TOKEN_ABI = ['function balanceOf(address) view returns(uint256)', 'function registered(address) view returns(bool)',
   'function issuer() view returns(address)', 'function register(address,bytes32,uint256,bytes)', 'function approve(address,uint256) returns(bool)', 'function allowance(address,address) view returns(uint256)'];
@@ -47,7 +47,7 @@ export class Payments {
     if (network.chainId !== BigInt(settings.chainId)) { provider.destroy(); throw new Error('RPC chain ID mismatch'); }
     const signer = this.wallet.connect(provider), token = new Contract(settings.token, TOKEN_ABI, signer), escrow = new Contract(settings.escrow, ESCROW_ABI, signer);
     const [tokenAddress, coordinator, issuer] = await Promise.all([escrow.token(), escrow.coordinator(), token.issuer()]);
-    if (await escrow.version() !== 4n) throw new Error('Per-token billing requires escrow version 4; deploy the updated token and escrow contracts');
+    if (await escrow.version() !== 5n) throw new Error('Model-rate billing requires escrow version 5; deploy the updated token and escrow contracts');
     if (tokenAddress.toLowerCase() !== settings.token.toLowerCase() || coordinator.toLowerCase() !== issuer.toLowerCase()) { provider.destroy(); throw new Error('Token/escrow issuer mismatch'); }
     this.provider?.destroy(); this.nextNonce = undefined; Object.assign(this, { provider, signer, token, escrow, settings, coordinator });
     this.state = { ...this.state, configured: true, chainId: Number(network.chainId), coordinator, isCoordinator: coordinator.toLowerCase() === this.wallet.address.toLowerCase(), token: settings.token, escrow: settings.escrow };
@@ -90,7 +90,7 @@ export class Payments {
     if (!id) {
       if (nostr !== localIdentity) throw new Error('Supply a funded escrow payment.id bound to your Nostr key and selected worker');
       const clientId = keccak256(randomBytes(32));
-      const jobId = keccak256(AbiCoder.defaultAbiCoder().encode(['address','bytes32'], [this.wallet.address, clientId])), price = parseEther(String(priceUnits));
+      const jobId = keccak256(AbiCoder.defaultAbiCoder().encode(['address','bytes32'], [this.wallet.address, clientId])), price = parseEther('1') / BigInt(CREDIT_SCALE) * BigInt(priceUnits);
       this.record?.({ id: jobId, worker, state: 'funding', transaction: null });
       await this.approveIfNeeded(price);
       const tx = await this.submit(overrides => this.escrow.lock(clientId, '0x' + nostr, worker, priceUnits, overrides));
@@ -106,7 +106,7 @@ export class Payments {
     if (!this.escrow) throw new Error('Worker payment network is not configured');
     const job = await this.escrow.jobs(id);
     if (job.state !== 1n || job.nostr.toLowerCase() !== ('0x' + nostr).toLowerCase() || job.worker.toLowerCase() !== worker.toLowerCase() ||
-        job.amount !== parseEther(String(priceUnits)) ||
+        job.amount !== parseEther('1') / BigInt(CREDIT_SCALE) * BigInt(priceUnits) ||
         Number(job.expires) * 1000 < Date.now() + 180000) throw new Error('Escrow is unfunded, expired, reused, underpriced, or bound to a different identity/worker');
     return job;
   }
@@ -117,16 +117,15 @@ export class Payments {
     const receipt = await tx.wait(1, 120000); return { ...voucher, registered: true, transaction: receipt.hash };
   }
   deliveryDigest(payment, outputHash) {
-    return keccak256(AbiCoder.defaultAbiCoder().encode(['uint256','address','bytes32','bytes32','uint256','string'], [this.state.chainId, this.settings.escrow, payment.id, outputHash, payment.credits, 'llmesh-usage-v1']));
+    return keccak256(AbiCoder.defaultAbiCoder().encode(['uint256','address','bytes32','bytes32','uint256','string'], [this.state.chainId, this.settings.escrow, payment.id, outputHash, payment.credits, USAGE_DOMAIN]));
   }
   async signDelivery(payment, outputHash) {
     if (!this.state.isCoordinator) throw new Error('Only coordinator can acknowledge delivery');
-    usageCredits(payment.promptTokens, payment.outputTokens, payment.priceUnits);
-    if (payment.credits !== payment.promptTokens + payment.outputTokens) throw new Error('Invalid delivery usage');
+    if (payment.credits !== usageCredits(payment.promptTokens, payment.outputTokens, payment.priceUnits, payment.atomsPerToken)) throw new Error('Invalid delivery usage');
     return this.wallet.signMessage(getBytes(this.deliveryDigest(payment, outputHash)));
   }
   async acceptDelivery(payment) {
-    if (payment.credits !== usageCredits(payment.promptTokens, payment.outputTokens)) throw new Error('Invalid delivery usage');
+    if (payment.credits !== usageCredits(payment.promptTokens, payment.outputTokens, payment.priceUnits, payment.atomsPerToken)) throw new Error('Invalid delivery usage');
     if (payment.chainId !== this.state.chainId || payment.escrow?.toLowerCase() !== this.settings.escrow?.toLowerCase() ||
         verifyMessage(getBytes(this.deliveryDigest(payment, payment.outputHash)), payment.attestation).toLowerCase() !== this.coordinator.toLowerCase()) throw new Error('Invalid delivery attestation');
     const job = await this.escrow.jobs(payment.id);
@@ -145,7 +144,7 @@ export class Payments {
       return confirmed?.status === 1 ? confirmed.hash : null;
     }
     if (job.state !== 1n) throw new Error('Settlement conflict: escrow is not funded');
-    if (!Number.isSafeInteger(payment.credits) || payment.credits < 0 || BigInt(payment.credits) * parseEther('1') > job.amount) throw new Error('Invalid settlement usage');
+    if (!Number.isSafeInteger(payment.credits) || payment.credits < 0 || BigInt(payment.credits) * (parseEther('1') / BigInt(CREDIT_SCALE)) > job.amount) throw new Error('Invalid settlement usage');
     let tx;
     if (previous?.settlement_tx) {
       const confirmed = await this.provider.getTransactionReceipt(previous.settlement_tx);

@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { FunnelRelay } from './relay.js';
 import { FunnelTunnel } from './tunnel.js';
 import { command, startCloudflare, startTailscale } from './providers.js';
 import { FUNNEL_PROTOCOL, funnelRequestUrl, funnelSettings, localTarget } from './protocol.js';

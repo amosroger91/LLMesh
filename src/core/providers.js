@@ -1,6 +1,6 @@
 import {recordInference} from '../shared/inference-metrics.js';
 import {randomUUID} from 'node:crypto';
-import {usageCredits} from './pricing.js';
+import {usageCredits, creditAtomsPerToken} from './pricing.js';
 
 export const PROVIDER_BASES={openrouter:'https://openrouter.ai/api/v1',groq:'https://api.groq.com/openai/v1'};
 export function estimatedProviderTokens(job){return Math.ceil(JSON.stringify({messages:job.messages,tools:job.tools??[]}).length/3)+(job.maxTokens??512)+128;}
@@ -40,15 +40,16 @@ export class ProviderPool {
     const checked=values.map(validate);this.providers=new Map(checked.map(provider=>[provider.id,{...provider,busy:0,reserved:0,cooldown:0,metrics:{}}]));}
   configuration(){return [...this.providers.values()].map(({busy:_busy,reserved:_reserved,cooldown:_cooldown,metrics:_metrics,error:_error,controller:_controller,...provider})=>provider);}
   usage(id){return this.db.prepare('SELECT * FROM provider_usage WHERE provider=? AND day=?').get(id,new Date().toISOString().slice(0,10))??{input_tokens:0,output_tokens:0,requests:0,errors:0};}
-  model(id){const provider=[...this.providers.values()].find(provider=>'donated:'+provider.id===id);return provider?{id,parametersB:provider.parametersB,rank:provider.rank,source:'third-party',provider:provider.kind,upstreamModel:provider.model}:null;}
+  model(id){const provider=[...this.providers.values()].find(provider=>'donated:'+provider.id===id);return provider?{id,abliterated:/abliterat/i.test(provider.model),parametersB:provider.parametersB,rank:provider.rank,source:'third-party',provider:provider.kind,upstreamModel:provider.model}:null;}
   snapshot(){return [...this.providers.values()].map(provider=>{const usage=this.usage(provider.id),remaining=Math.max(0,provider.dailyLimit-usage.input_tokens-usage.output_tokens-(usage.uncertain_tokens??0)-provider.reserved),model=this.model('donated:'+provider.id);
-    return {id:'api-'+provider.id,providerId:provider.id,provider:provider.kind,upstreamModel:provider.model,model:model.id,modelInfo:model,source:'third-party',state:!provider.enabled?'disabled':provider.cooldown>Date.now()?'cooldown':remaining<4096?'quota':'ready',busy:provider.busy,
-      slots:1,free:provider.enabled&&!provider.busy&&provider.cooldown<=Date.now()&&remaining>=4096?1:0,requestTokenLimit:this.requestLimit(provider),remainingCredits:remaining,dailyLimit:provider.dailyLimit,usage,calls:this.db.prepare('SELECT configured_model,reported_model,input_tokens,output_tokens,created FROM provider_calls WHERE provider=? ORDER BY created DESC LIMIT 10').all(provider.id),metrics:provider.metrics,error:provider.error??null};});}
+    return {id:'api-'+provider.id,providerId:provider.id,provider:provider.kind,upstreamModel:provider.model,model:model.id,modelInfo:model,source:'third-party',state:!provider.enabled||model.abliterated&&!this.abliteratedServing?'disabled':provider.cooldown>Date.now()?'cooldown':remaining<4096?'quota':'ready',busy:provider.busy,
+      slots:1,free:provider.enabled&&(!model.abliterated||this.abliteratedServing)&&!provider.busy&&provider.cooldown<=Date.now()&&remaining>=4096?1:0,requestTokenLimit:this.requestLimit(provider),remainingCredits:remaining,dailyLimit:provider.dailyLimit,usage,calls:this.db.prepare('SELECT configured_model,reported_model,input_tokens,output_tokens,created FROM provider_calls WHERE provider=? ORDER BY created DESC LIMIT 10').all(provider.id),metrics:provider.metrics,error:provider.error??null};});}
   requestLimit(provider){const value=Math.min(provider.maxRequestTokens??Infinity,this.db.prepare('SELECT request_tokens FROM provider_limits WHERE provider=?').get(provider.id)?.request_tokens??Infinity);return Number.isFinite(value)?value:undefined;}
   async *chat(job,signal){
     if(job.hardwareOnly)throw new Error('Hardware-only requests cannot use donated APIs');
     if(job.privacy!=='allow-third-party')throw new Error('Third-party inference was not authorized by the requester');
     const provider=this.providers.get(job.instanceId?.slice(4));if(!provider||'donated:'+provider.id!==job.model)throw new Error('Unknown donated model');
+    if(this.model(job.model)?.abliterated&&(!this.abliteratedServing||job.allowAbliterated!==true))throw new Error('Abliterated donated models require owner enablement and explicit request opt-in');
     const reserve=job.contextTokens+job.maxTokens,slot=this.snapshot().find(slot=>slot.id===job.instanceId);
     if(!slot?.free||slot.remainingCredits<reserve)throw new Error('Donated API quota is busy or insufficient');
     if(slot.requestTokenLimit!=null&&estimatedProviderTokens(job)>slot.requestTokenLimit)throw new Error('This request exceeds the donated provider token limit; compact the conversation or use a larger-capacity worker');
@@ -89,7 +90,7 @@ export class ProviderPool {
         }
       }
       if(!usage)throw new Error('Provider did not report token usage; donation paused');
-      usageCredits(usage.prompt_tokens,usage.completion_tokens,reserve);if(usage.completion_tokens>job.maxTokens||usage.prompt_tokens>job.contextTokens)throw new Error('Provider exceeded authorized token budget');
+      const atomsPerToken=creditAtomsPerToken(this.model(job.model));usageCredits(usage.prompt_tokens,usage.completion_tokens,reserve*atomsPerToken,atomsPerToken);if(usage.completion_tokens>job.maxTokens||usage.prompt_tokens>job.contextTokens)throw new Error('Provider exceeded authorized token budget');
       this.db.prepare('UPDATE provider_usage SET input_tokens=input_tokens+?,output_tokens=output_tokens+?,requests=requests+1 WHERE provider=? AND day=?').run(usage.prompt_tokens,usage.completion_tokens,provider.id,day);
       this.db.prepare('INSERT INTO provider_calls VALUES (?,?,?,?,?,?,?)').run(randomUUID(),provider.id,provider.model,reportedModel??null,usage.prompt_tokens,usage.completion_tokens,Date.now());
       if(calls.size)yield{type:'tool_calls',calls:[...calls.values()]};

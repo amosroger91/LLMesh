@@ -1,9 +1,12 @@
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
+import { existsSync,createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import { copyModel, defaultBundle, defaultCache } from './model-bundle.js';
 import { randomUUID } from 'node:crypto';
+import {catalog} from './catalog.js';
+import {modelAsset} from './model-assets.js';
+import {restoreOllamaModel} from './model-vault.js';
 
 export async function* ndjson(body) {
   let pending = '';
@@ -56,13 +59,23 @@ export class Ollama {
     await this.ensureRunning(); signal.throwIfAborted();
     if ((await this.installed()).includes(model)) {
       progress({ status: 'Using installed model; skipping registry download' });
+    } else if(catalog.models.find(item=>item.id===model)?.gguf){
+      const asset=catalog.models.find(item=>item.id===model).gguf,cache=this.cacheDirectory??defaultCache();
+      const file=await modelAsset(asset,join(cache,'llmesh-assets'),progress,signal);
+      const digest='sha256:'+asset.sha256;
+      const existing=await fetch(this.base+'/api/blobs/'+digest,{method:'HEAD',signal});
+      if(!existing.ok){const uploaded=await fetch(this.base+'/api/blobs/'+digest,{method:'POST',body:createReadStream(file),duplex:'half',signal});if(!uploaded.ok)throw new Error('GGUF blob import HTTP '+uploaded.status);}
+      for await(const item of ndjson((await this.request('/api/create',{model,files:{'model.gguf':digest},stream:true},signal)).body)){if(item.error)throw new Error(item.error);progress(item);}
     } else if (await copyModel(model, this.bundleDirectory ?? defaultBundle(), this.cacheDirectory ?? defaultCache(), progress, signal)) {
       if (!(await this.installed()).includes(model)) throw new Error('Offline model copied but not visible to Ollama. Its OLLAMA_MODELS directory must match LLMesh.');
     } else {
-      for await (const item of ndjson((await this.request('/api/pull', { model, stream: true }, signal)).body)) {
-        if (item.error) throw new Error(item.error);
-        progress(item);
-      }
+      const pull=new AbortController(),timer=setTimeout(()=>pull.abort(new Error('Registry did not begin transferring model weights')),30000);
+      try{for await(const item of ndjson((await this.request('/api/pull',{model,stream:true},AbortSignal.any([signal,pull.signal]))).body)){
+        if(item.error)throw new Error(item.error);if(item.completed>0)clearTimeout(timer);progress(item);
+      }}catch(error){signal.throwIfAborted();if(!await restoreOllamaModel(model,this.cacheDirectory??defaultCache(),progress,signal))throw error;
+        progress({status:'Restored model from this repository backup'});
+        if(!(await this.installed()).includes(model))throw new Error('Repository backup is not visible to Ollama; check its model cache directory',{cause:error});
+      }finally{clearTimeout(timer);}
     }
     progress({ status: 'Loading model into memory' }); await this.warm(model, signal);
   }

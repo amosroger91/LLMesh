@@ -2,11 +2,13 @@ import { app, ipcMain, clipboard } from 'electron';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-const directory = resolve('.llmesh/smoke');
+const directory = resolve('.llmesh/smoke-'+process.pid);
 app.disableHardwareAcceleration();
 mkdirSync(directory, { recursive: true });
 app.setPath('userData', directory);
 process.env.LLMESH_SMOKE = '1'; process.env.LLMESH_NO_MESH = '1'; process.env.LLMESH_PORT = '0';
+process.on('uncaughtException',error=>{console.error(error);app.exit(1);});
+process.on('unhandledRejection',error=>{console.error(error);app.exit(1);});
 const timeout = setTimeout(() => { console.error('Electron smoke test timed out'); app.exit(1); }, 30000);
 app.on('browser-window-created', (_event, window) => {
   window.webContents.on('render-process-gone', () => { console.error('Renderer crashed'); app.exit(1); });
@@ -24,6 +26,9 @@ app.on('browser-window-created', (_event, window) => {
         }, 50);
       })`);
       if (result.levels !== 3 || result.modelChooser || result.socialNavigation || result.error) throw new Error(JSON.stringify(result));
+      assert.equal(await window.webContents.executeJavaScript(`document.getElementById('privacy-mode').closest('.view').id`),'view-settings');
+      assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('#runtime-engine').length`),1);
+      assert.equal(await window.webContents.executeJavaScript(`Boolean(document.getElementById('model-inventory'))`),true);
       const desktopModules=await window.webContents.executeJavaScript(`['network-map','public-network-map','public-network-count','pair-create','linked-devices','donor-list','privacy-mode','funnel-provider','funnel-cloudflare-token','funnel-status'].every(id=>Boolean(document.getElementById(id)))`);
       assert.equal(desktopModules,true,'Desktop is missing a current mesh module');
       const aliveMap=await window.webContents.executeJavaScript(`(()=>{document.querySelector('[data-view="network"]').click();const known=document.querySelector('#network-map canvas.alive-map'),open=document.querySelector('#public-network-map canvas.alive-map');return {known:known?.dataset.drawn==='1',open:open?.dataset.drawn==='1'};})()`);
@@ -125,7 +130,7 @@ app.on('browser-window-created', (_event, window) => {
       if (!overviewVisible) throw new Error('Overview navigation did not activate');
       await new Promise(resolve => setTimeout(resolve, 150));
       writeFileSync(resolve('.llmesh/smoke.png'), (await window.webContents.capturePage()).toPNG());
-      for (const view of ['energy', 'wallet', 'companion', 'network', 'donations']) {
+      for (const view of ['energy', 'wallet', 'companion', 'network', 'donations', 'settings']) {
         await window.webContents.executeJavaScript(`document.querySelector('[data-view="${view}"]').click()`);
         await new Promise(resolve => setTimeout(resolve, 100));
         writeFileSync(resolve(`.llmesh/smoke-${view}.png`), (await window.webContents.capturePage()).toPNG());

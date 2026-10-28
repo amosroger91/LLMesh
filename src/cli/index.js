@@ -86,7 +86,7 @@ async function main(){const config=loadConfig();
   const groupTopic=existsSync(join(config.dataDir,'group.key'))?keys.load('group',()=>{throw new Error('Missing group key');}):config.topic;
   const service=new Service({directory:config.dataDir,secret,apiKey:keys.load('api',()=>randomBytes(32).toString('hex')),payments,topic:groupTopic,
     allowedWorkers:[...new Set([...config.allowedWorkers,...(group.workers??[])])],trustedCoordinators:[...new Set([...config.trustedCoordinators,...(group.coordinators??[])])],
-    runtime:{runtime:config.runtime,explicitRuntime:config.explicitRuntime,urls:config.urls},placement:placementOptions(config)});
+    runtime:{engine:config.engine,executable:config.llamaServer,runtime:config.runtime,explicitRuntime:config.explicitRuntime,urls:config.urls},placement:placementOptions(config)});
   service.drainTimeoutMs=config.drainTimeout*1000;service.on('progress',item=>log('setup',item));service.on('log',entry=>log('runtime',entry));
   await service.initialize();if(Object.keys(config.energy).length)service.energy.configure(config.energy);
   const tls=config.tlsCert&&config.tlsKey?{cert:readFileSync(config.tlsCert),key:readFileSync(config.tlsKey)}:undefined;

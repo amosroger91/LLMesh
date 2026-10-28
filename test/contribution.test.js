@@ -12,7 +12,7 @@ test('low, medium and high automatically choose different model and CPU budgets'
   const profiles = ['low', 'medium', 'high'].map(level => chooseContribution(hardware, level));
   assert.deepEqual(profiles.map(profile => profile.model.id), ['qwen3.5:4b', 'qwen3.5:9b', 'qwen3.8:27b']);
   assert.deepEqual(profiles.map(profile => profile.threads), [2, 4, 8]);
-  assert.deepEqual(profiles.map(profile => profile.reward), [1, 1, 1]);
+  assert.deepEqual(profiles.map(profile => profile.reward), [1, 1, 1.5]);
   assert.equal(chooseContribution(hardware).level, 'medium');
   assert.equal(chooseContribution({ ...hardware, gpus: [], freeRamGB: 1 }).model, null);
   assert.equal(chooseContribution({ ...hardware, gpus: [{ vramGB: 4, freeGB: 3 }] }, 'low').model.id, 'qwen3.5:2b');

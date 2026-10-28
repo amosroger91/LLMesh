@@ -1,3 +1,4 @@
+import {rankNodes,performanceLabel,inventoryLabel} from './node-performance.js';
 import { deviceStatus } from './serving-topology.js';
 import { ObservedGraph } from './observed-graph.js';
 
@@ -48,6 +49,7 @@ function drawNode(context, node, point, pictures) {
   context.font = '17px system-ui';
   context.textAlign = 'center';
   context.fillText(String(node.profile?.name ?? node.name ?? node.kind).slice(0, 22), point.x, point.y + 39);
+  context.font = '12px system-ui';context.fillText(performanceLabel(node),point.x,point.y+76);
   if (node.profile?.bio) {
     context.font = '12px system-ui';
     context.fillText(node.profile.bio.slice(0, 30), point.x, point.y + 59);
@@ -89,6 +91,7 @@ function layoutDesktop(width, height, base, providers) {
 }
 
 export function drawAliveScene(context, { width, height, scene, pictures = new Map(), caption = {} }) {
+  scene={...scene,nodes:rankNodes(scene.nodes)};
   const portrait = height > width;
   const base = scene.nodes.filter(node => node.kind !== 'provider');
   const providers = scene.nodes.filter(node => node.kind === 'provider');
@@ -111,6 +114,8 @@ export function drawAliveScene(context, { width, height, scene, pictures = new M
     context.font = 'bold 34px system-ui';
     context.fillText(caption.title ?? '', width / 2, 68);
   }
+  context.fillStyle='#94adbf';context.font=portrait?'15px system-ui':'12px system-ui';
+  const inventory=inventoryLabel(scene.nodes);const chunks=inventory.match(/.{1,110}(?: · |$)/g)??[inventory];for(const [index,line]of chunks.slice(0,3).entries())context.fillText(line,width/2,(portrait?195:92)+index*17);
   context.lineWidth = 2;
   for (const edge of scene.edges) {
     const from = positions.get(edge.from);

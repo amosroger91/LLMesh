@@ -8,7 +8,7 @@ import { planPlacement } from '../src/placement.js';
 const hardware={ramGB:64,freeRamGB:48,cores:16,platform:'linux',gpus:[0,1,2].map(index=>({index,uuid:'GPU-'+index,backend:'cuda',name:'NVIDIA',vramGB:24,freeGB:24}))};
 test('managed pool isolates GPUs, downloads once, runs three requests concurrently and closes every process', {timeout:20000},async()=>{
   const directory=mkdtempSync(join(tmpdir(),'llmesh-pool-'));
-  const pool=new OllamaPool({explicitRuntime:true,executable:process.execPath,args:[resolve('test/fake-ollama.js')],cache:directory,bundleDirectory:join(directory,'no-bundle')});
+  const pool=new OllamaPool({explicitRuntime:true,calibrate:false,executable:process.execPath,args:[resolve('test/fake-ollama.js')],cache:directory,bundleDirectory:join(directory,'no-bundle')});
   const placement=planPlacement(hardware,{level:'high',basePort:18500});
   try{
     await pool.configure(placement,hardware);assert.ok(pool.snapshot().every(instance=>instance.state==='ready'),JSON.stringify(pool.snapshot()));
@@ -24,7 +24,7 @@ test('managed pool isolates GPUs, downloads once, runs three requests concurrent
 });
 test('failed model load falls back on that instance without disabling the others', {timeout:20000},async()=>{
   const directory=mkdtempSync(join(tmpdir(),'llmesh-pool-oom-'));
-  const pool=new OllamaPool({explicitRuntime:true,executable:process.execPath,args:[resolve('test/fake-ollama.js')],cache:directory,bundleDirectory:join(directory,'none'),env:{FAKE_OOM_MODEL:'qwen3.8:27b'}});
+  const pool=new OllamaPool({explicitRuntime:true,calibrate:false,executable:process.execPath,args:[resolve('test/fake-ollama.js')],cache:directory,bundleDirectory:join(directory,'none'),env:{FAKE_OOM_MODEL:'qwen3.8:27b'}});
   try{await pool.configure(planPlacement(hardware,{level:'high',basePort:18600}),hardware);assert.ok(pool.snapshot().every(instance=>instance.state==='ready'));assert.ok(pool.snapshot().every(instance=>instance.model==='qwen3.5:9b'));}
   finally{await pool.close();rmSync(directory,{recursive:true,force:true});}
 });

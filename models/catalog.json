@@ -77,6 +77,24 @@
       "tier": "Desktop baseline quantized",
       "rank": 3,
       "automatic": false
+    },
+    {
+      "id": "qwen3.5:4b-abliterated-q4_K_M",
+      "parametersB": 4,
+      "downloadGB": 2.71,
+      "memoryGB": 4.8,
+      "minRamGB": 12,
+      "tier": "Explicit-only abliterated worker",
+      "rank": 3,
+      "automatic": false,
+      "abliterated": true,
+      "enabledByDefault": false,
+      "license": "Apache-2.0",
+      "gguf": {
+        "url": "https://huggingface.co/mradermacher/Huihui-Qwen3.5-4B-abliterated-GGUF/resolve/9d3aebb998fcf084086a3d1c60c31035fcfbf8e1/Huihui-Qwen3.5-4B-abliterated.Q4_K_M.gguf",
+        "sha256": "423f10b6ec2d99c3378143d7cd3b80eb4887b3ed92103103ac59173b404f4f7c",
+        "size": 2707514688
+      }
     }
   ]
 }
