@@ -1,0 +1,20 @@
+[Unit]
+Description=LLMesh funnel relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=llmesh
+Group=llmesh
+WorkingDirectory=/opt/llmesh
+Environment=LLMESH_FUNNEL_PUBLIC_BASE=https://funnel.example
+Environment=LLMESH_FUNNEL_TOKEN_FILE=/etc/llmesh/funnel-token
+Environment=LLMESH_FUNNEL_ALLOW=
+ExecStart=/usr/bin/node /opt/llmesh/src/cli/index.js funnel relay --listen 127.0.0.1:7443 --tls-cert /etc/llmesh/funnel.crt --tls-key /etc/llmesh/funnel.key
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
+import { funnelSettings } from '../core/funnel/protocol.js';
 export const defaultData = () => process.env.LLMESH_HOME ?? (process.platform==='win32'?join(process.env.APPDATA??homedir(),'llmesh-headless'):join(process.env.XDG_DATA_HOME??join(homedir(),'.local','share'),'llmesh'));
 export const defaultConfig = () => join(process.env.XDG_CONFIG_HOME??join(homedir(),'.config'),'llmesh','config.json');
 const list = value => Array.isArray(value)?value:String(value??'').split(',').filter(Boolean);
@@ -11,7 +12,8 @@ export function loadConfig(argv=process.argv.slice(2), env=process.env) {
   const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{
     config:{type:'string'},listen:{type:'string'},gpus:{type:'string'},placement:{type:'string'},parallel:{type:'string'},runtime:{type:'string'},'ollama-url':{type:'string',multiple:true},level:{type:'string'},
     'data-dir':{type:'string'},'admin-socket':{type:'string'},'metrics-listen':{type:'string'},'tls-cert':{type:'string'},'tls-key':{type:'string'},'insecure-listen':{type:'boolean'},
-    'install-runtime':{type:'boolean'},'log-format':{type:'string'},'drain-timeout':{type:'string'},json:{type:'boolean'},offline:{type:'boolean'},version:{type:'boolean'},help:{type:'boolean'},out:{type:'string'}
+    'install-runtime':{type:'boolean'},'log-format':{type:'string'},'drain-timeout':{type:'string'},json:{type:'boolean'},offline:{type:'boolean'},version:{type:'boolean'},help:{type:'boolean'},out:{type:'string'},
+    funnel:{type:'string'},'funnel-relay':{type:'string'},'funnel-public-url':{type:'string'},'funnel-public-base':{type:'string'}
   }});
   const configPath=values.config??env.LLMESH_CONFIG??defaultConfig();
   const file=existsSync(configPath)?JSON.parse(readFileSync(configPath,'utf8')):{};
@@ -28,7 +30,10 @@ export function loadConfig(argv=process.argv.slice(2), env=process.env) {
     tlsCert:pick('tls-cert','LLMESH_TLS_CERT','tlsCert',null),tlsKey:pick('tls-key','LLMESH_TLS_KEY','tlsKey',null),
     insecureListen:pick('insecure-listen','LLMESH_INSECURE_LISTEN','insecureListen',false),installRuntime:values['install-runtime']??false,
     logFormat:pick('log-format','LLMESH_LOG_FORMAT','logFormat','json'),drainTimeout:Number(pick('drain-timeout','LLMESH_DRAIN_TIMEOUT','drainTimeout',30)),
-    topic:env.LLMESH_TOPIC??file.topic,allowedWorkers:list(env.LLMESH_WORKERS??file.allowedWorkers),trustedCoordinators:list(env.LLMESH_COORDINATORS??file.trustedCoordinators),energy:file.energy??{}
+    topic:env.LLMESH_TOPIC??file.topic,allowedWorkers:list(env.LLMESH_WORKERS??file.allowedWorkers),trustedCoordinators:list(env.LLMESH_COORDINATORS??file.trustedCoordinators),energy:file.energy??{},
+    funnel:pick('funnel','LLMESH_FUNNEL','funnel','off'),funnelRelay:pick('funnel-relay','LLMESH_FUNNEL_RELAY','funnelRelay',null),
+    funnelPublicUrl:pick('funnel-public-url','LLMESH_FUNNEL_PUBLIC_URL','funnelPublicUrl',null),funnelPublicBase:pick('funnel-public-base','LLMESH_FUNNEL_PUBLIC_BASE','funnelPublicBase',null),
+    funnelToken:secretEnv('LLMESH_FUNNEL_TOKEN',env)||file.funnelToken||null,funnelAllow:list(env.LLMESH_FUNNEL_ALLOW??file.funnelAllow??[])
   };
   if(!['low','medium','high'].includes(config.level))throw new Error('level must be low, medium, or high');
   if(!['auto','split','replicate'].includes(config.placement))throw new Error('placement must be auto, split, or replicate');
@@ -39,6 +44,12 @@ export function loadConfig(argv=process.argv.slice(2), env=process.env) {
   if(typeof config.gpus==='string'&&!['auto','all'].includes(config.gpus))config.gpus=list(config.gpus);
   for(const url of config.urls){const parsed=new URL(url);if(!['http:','https:'].includes(parsed.protocol)||parsed.username||parsed.password)throw new Error('ollama-url must be HTTP(S) without embedded credentials');}
   const address=new URL('http://'+config.listen);config.host=address.hostname.replace(/^\[|\]$/g,'');config.port=Number(address.port||80);
-  if(!['127.0.0.1','::1','localhost'].includes(config.host)&&!(config.tlsCert&&config.tlsKey)&&![true,'true','1'].includes(config.insecureListen))throw new Error('Non-loopback listen requires tls-cert/tls-key or explicit --insecure-listen');
+  const relayCommand=config.command==='funnel'&&config.args[0]==='relay';
+  const loopback=['127.0.0.1','::1','localhost'].includes(config.host);
+  if(!relayCommand&&!loopback&&!(config.tlsCert&&config.tlsKey)&&![true,'true','1'].includes(config.insecureListen))throw new Error('Non-loopback listen requires tls-cert/tls-key or explicit --insecure-listen');
+  if(config.funnelAllow.some(key=>!/^[a-f0-9]{64}$/.test(key)))throw new Error('Funnel allowlist entries must be 64-character node keys');
+  const funnel=funnelSettings({provider:config.funnel,relay:config.funnelRelay,publicUrl:config.funnelPublicUrl,publicBase:config.funnelPublicBase,token:config.funnelToken},{allowInsecure:[true,'true','1'].includes(config.insecureListen)});
+  config.funnel=funnel.provider;config.funnelRelay=funnel.relay;config.funnelPublicUrl=funnel.publicUrl;config.funnelPublicBase=funnel.publicBase;config.funnelToken=funnel.token;
+  config.funnelPlainRelay=relayCommand&&!loopback&&!(config.tlsCert&&config.tlsKey);
   return config;
 }

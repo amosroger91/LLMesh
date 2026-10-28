@@ -12,7 +12,7 @@ LLMesh turns your computer into an AI node. It detects your hardware, chooses a 
 
 You choose how much computing power to contribute. Use the machine in front of you, share a home GPU with your other devices, or build a trusted group that pools access to larger models.
 
-**Current status:** an Electron/Node implementation with local inference, a trusted peer mesh, prototype Base token contracts and a Rust/WASM foundation. No live LLMESH token or escrow deployment is supplied. The web worker and desktop-approved QR device linking are implemented. Native Android, full Nostr remote signing, the full Rust daemon and the downloadable installer matrix remain roadmap work.
+**Current status:** an Electron/Node implementation with local inference, a trusted peer mesh, prototype Base token contracts and a Rust/WASM foundation. No live LLMESH token or escrow deployment is supplied. The web worker and desktop-approved QR device linking are implemented. An opt-in internet funnel can publish the authenticated API through an LLMesh relay, Tailscale Funnel, a Cloudflare tunnel, or an existing HTTPS address. Native Android, full Nostr remote signing, the full Rust daemon and the downloadable installer matrix remain roadmap work.
 
 [Open the web worker](https://amosroger91.github.io/LLMesh/) · [Start](#start-running) · [Features](#what-works-today) · [API](#one-endpoint-for-your-tools) · [Vision](#what-happens-when-the-network-grows) · [Roadmap](#where-were-going)
 
@@ -34,6 +34,7 @@ The ambition is to put more of AI's infrastructure in the hands of the people wh
 | Streaming mesh inference | Authenticated, Noise-encrypted Hyperswarm connections between trusted nodes |
 | Complexity-aware routing | Recommends a tier, then weighs availability, latency, throughput and price |
 | OpenAI-compatible API | Model discovery, streamed chat, function tool calls, route previews and receipts |
+| Internet funnel | Publishes that same authenticated API at a verified public URL. Off by default |
 | AI companion | A chat interface to that same mesh pipeline, with cancellation and local history |
 | Network map | Live graph of known trusted desktops, their linked browser devices and your donated API workers |
 | Web worker | One-button Qwen3.5 WebGPU/WASM setup, online count and request activity; no wallet UI |
@@ -143,6 +144,32 @@ for chunk in response:
 Supports text and text-part arrays, developer messages, assistant tool calls and tool results. Tools execute in the requesting application. Limits: 256 messages, 128 function definitions, 90,000 serialized input characters and a 512 KiB HTTP body. Positive output limits above 2048 are accepted and clamped; receipts show requested and effective limits. Context scales from 4096 to 32768 tokens. Images, audio, embeddings and complete OpenAI API parity are not implemented.
 
 The default API is loopback-only and rejects browser-origin calls. Protect its bearer key: configured remote requests can spend the node's tokens and gas. NIP-98 authentication also supports exact URL/method/payload binding and replay protection. The web worker uses a paired, application-encrypted WebRTC data channel to its desktop; it never receives the API bearer key and needs no wildcard CORS.
+
+## Expose your node with a funnel
+
+A funnel is the standard way to give that loopback API a public URL without opening a router port and without turning authentication off. Pick one provider:
+
+| Provider | Use it when | Start |
+| --- | --- | --- |
+| `relay` | Your group runs an LLMesh funnel relay | `LLMESH_FUNNEL=relay` and `LLMESH_FUNNEL_RELAY=https://funnel.example` |
+| `tailscale` | This machine is on Tailscale | `LLMESH_FUNNEL=tailscale` |
+| `cloudflare` | You want a quick HTTPS tunnel | `LLMESH_FUNNEL=cloudflare` |
+| `public` | The API is already on public HTTPS | `LLMESH_FUNNEL=public` and `LLMESH_FUNNEL_PUBLIC_URL=https://node.example` |
+| `off` | The API stays on this machine | Default |
+
+The node fetches its public URL and treats it as ready only when `/.well-known/llmesh.json` answers with this node's key. Trusted peers then see that verified URL. Point an OpenAI-compatible client at `<public-url>/v1` and use the same API key, or sign NIP-98 for the public URL rather than the loopback URL. The funnel does not publish the key, the wallet, or prompts. Browser pages still cannot call the API. Mesh jobs continue to use the encrypted peer connection; the funnel is how operators and tools reach the node when hole punching is not enough.
+
+On the desktop, open **Publish this node**, choose a provider, and apply. The relay token is stored with OS encryption. Leave the token field blank to keep the saved token. Copy the public URL only after the status says it is verified.
+
+Run a relay for a group. Put TLS on the relay or on a proxy in front of it, and set a token or a node allowlist:
+
+```powershell
+$env:LLMESH_FUNNEL_PUBLIC_BASE = 'https://funnel.example'
+$env:LLMESH_FUNNEL_TOKEN = '<16 or more random characters>'
+node src/cli/index.js funnel relay --listen 127.0.0.1:7443 --tls-cert cert.pem --tls-key key.pem
+```
+
+`node src/cli/index.js funnel status` and `node src/cli/index.js funnel probe` read a running node. Headless mode uses the same `LLMESH_FUNNEL*` variables. The protocol, relay frames, and deployment unit are in [the funnel standard](docs/funnel.md). A container and a systemd unit are in `deploy/funnel/`. No hosted relay is operated for you.
 
 ## How requests find a worker
 
@@ -261,6 +288,7 @@ Wider adoption would not automatically remove corporate power or create an equal
 | Track | Current state | Next destination |
 | --- | --- | --- |
 | Desktop | Electron/Node app and local API | Instance controls, recovery and release delivery |
+| Internet funnel | Opt-in relay, Tailscale, Cloudflare, or an existing HTTPS URL, with a reachability check | Mesh-job transport over the funnel, and a hosted relay |
 | Multi-GPU | Planner/pool and simulated tests | Physical validation, complete UI and energy attribution |
 | Linux | Node headless entrypoint; expanded CLI under development | x64/arm64 tarballs, deb/rpm, systemd and containers |
 | Rust | Quote/placement crates, shared fixtures, CLI preview, WASM exports | Validation/routing bindings, daemon, libp2p and parity-gated desktop sidecar |
@@ -280,6 +308,7 @@ Plans and acceptance criteria:
 - [Rust core and Android](PLAN_RUST_AND_ANDROID.md)
 - [WASM web and shared accounts](PLAN_WEB_AND_ACCOUNTS.md)
 - [Security, privacy and branding](PLAN_SECURITY_AND_BRAND.md)
+- [Internet funnel](docs/funnel.md)
 - [Review fixes and remaining work](REVIEW_STATUS.md)
 - [Rust parity checklist](docs/rust-parity.md)
 

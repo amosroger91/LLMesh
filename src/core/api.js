@@ -4,6 +4,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { authenticate } from './identity.js';
 import { StringDecoder } from 'node:string_decoder';
 import { AUTO_MODEL } from './router.js';
+import { nodeManifest, resolveAuthUrl } from './funnel/protocol.js';
 
 export function openApi(base) {
   const document = { openapi: '3.1.0', info: { title: 'LLMesh local inference', version: '0.1.0' }, servers: [{ url: base }],
@@ -32,18 +33,27 @@ export async function startApi(service, { port = 7337, host = '127.0.0.1', tls }
     try {
       const pathname = new URL(req.url, service.apiUrl).pathname;
       if (pathname === '/health' && req.method === 'GET') return json(200, { ok: true });
+      if (pathname === '/.well-known/llmesh.json' && req.method === 'GET') return json(200, nodeManifest(service));
       if (pathname === '/ready' && req.method === 'GET') {
         const state = service.status();
         const ready = !service.draining && !service.closed && (state.serving.length > 0 || state.workers.some(worker => worker.busy === 0 && worker.models.length));
         return json(ready ? 200 : 503, { ready });
       }
-      if (pathname === '/openapi.json' && req.method === 'GET') return json(200, openApi(service.apiUrl));
+      if (pathname === '/openapi.json' && req.method === 'GET') {
+        const document = openApi(service.apiUrl);
+        const published = service.funnel?.status?.();
+        if (published?.state === 'verified' && published.publicUrl) document.servers.push({ url: published.publicUrl });
+        return json(200, document);
+      }
       if (req.headers.origin) return error(403, 'Browser origins are not allowed; use the desktop app or an API client');
       const decoder = new StringDecoder('utf8'); let raw = '', size = 0;
       for await (const chunk of req) { size += chunk.length; if (size > 524288) return error(413, 'Request body exceeds 512 KiB'); raw += decoder.write(chunk); }
       raw += decoder.end();
       let pubkey;
-      try { pubkey = bearer(req.headers.authorization, service.apiKey) ? service.pubkey : authenticate(req.headers.authorization, service.apiUrl + req.url, req.method, raw, service.ledger); }
+      try {
+        const authUrl = resolveAuthUrl(service, req);
+        pubkey = bearer(req.headers.authorization, service.apiKey) ? service.pubkey : authenticate(req.headers.authorization, authUrl, req.method, raw, service.ledger);
+      }
       catch (e) { return error(401, e.message); }
       if (req.method === 'POST' && pathname === '/v1/accounts') {
         if (service.requirePayments) {

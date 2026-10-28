@@ -69,9 +69,10 @@ async function refresh() {
   textRow($('hardware'), 'SYSTEM', `${state.hardware.platform} / ${state.hardware.arch}`);
   $('pubkey').textContent = state.pubkey; $('npub').textContent = npubEncode(state.pubkey);
   $('api').textContent = state.api + '/v1'; $('api-key').value = 'Use the Copy key button'; $('openapi-url').textContent = state.api + '/openapi.json';
+  renderFunnel(state.funnel);
   $('api-example').textContent = `from openai import OpenAI\n\nclient = OpenAI(\n  base_url="${state.api}/v1",\n  api_key="<copy your local key>"\n)\n\nclient.chat.completions.create(\n  model="llmesh-auto",\n  messages=[{"role": "user",\n    "content": "Hello, mesh!"}],\n  stream=True\n)`;
   $('worker-list').replaceChildren();
-  for (const worker of state.workers) textRow($('worker-list'), short(worker.pubkey), `${worker.busy ? 'Busy' : 'Idle'} · ${worker.latencyMs.toFixed(0)} ms RTT · ${worker.wallet ? 'wallet ready' : 'no wallet'}`);
+  for (const worker of state.workers) textRow($('worker-list'), short(worker.pubkey), `${worker.busy ? 'Busy' : 'Idle'} · ${worker.latencyMs.toFixed(0)} ms RTT · ${worker.wallet ? 'wallet ready' : 'no wallet'}${worker.funnel?.url ? ` · funnel ${worker.funnel.url}` : ''}`);
   if (!state.workers.length) $('worker-list').textContent = 'No trusted inference workers connected.';
   const speeds=[...(state.instances??[]).map(item=>({...item,name:'Your desktop'})),...(state.browserDevices??[]),...(state.donations??[]).map(item=>({...item,name:item.provider})),...state.workers.flatMap(worker=>worker.models.map(model=>({id:worker.instanceId??worker.pubkey,name:worker.profile?.name??short(worker.pubkey),model,metrics:worker.metrics?.[model]})))].map(item=>({...item,measurement:item.metrics??item})).filter(item=>Number.isFinite(item.measurement.tokensPerSecond)&&item.measurement.tokensPerSecond>0).sort((a,b)=>b.measurement.tokensPerSecond-a.measurement.tokensPerSecond);
   $('speed-ranking').replaceChildren();speeds.forEach((item,index)=>textRow($('speed-ranking'),`${index+1}. ${item.name} · ${item.model}`,`${item.measurement.tokensPerSecond.toFixed(1)} tokens/s · ${Math.round(item.measurement.firstTokenMs??0)} ms first token`));
@@ -82,6 +83,10 @@ async function refresh() {
     $('energy-rate').value = energy.rate; $('energy-currency').value = energy.currency; $('energy-watts').value = energy.estimatedWatts;
     $('energy-host').value = energy.hostWatts; $('energy-wall').value = energy.wallWatts ?? '';
     const settings = state.payments.settings ?? {};
+    const funnel = state.funnel?.configured ?? state.funnel ?? {};
+    if ($('funnel-provider')) $('funnel-provider').value = funnel.provider ?? 'off';
+    if ($('funnel-relay') && funnel.relay) $('funnel-relay').value = funnel.relay;
+    if ($('funnel-public-url') && funnel.publicUrl) $('funnel-public-url').value = funnel.publicUrl;
     if (settings.rpc) $('wallet-rpc').value = settings.rpc;
     if (settings.chainId) $('wallet-chain').value = settings.chainId;
     $('wallet-token').value = settings.token ?? ''; $('wallet-escrow').value = settings.escrow ?? ''; first = false;
@@ -100,6 +105,12 @@ $('privacy-mode').onchange=async()=>{
   catch(cause){error(cause);select.value=state.inferencePrivacy??'mesh-only';$('privacy-note').textContent='Could not save inference routing preference.';}
   finally{privacySaving=false;select.disabled=false;}
 };
+function renderFunnel(funnel = { provider: 'off', state: 'off' }) {
+  const status = $('funnel-status');
+  if (!status) return;
+  const label = { off: 'Funnel is off. This node stays on loopback.', starting: 'Opening the funnel.', pending: 'Funnel is up. Waiting until the public URL reaches this node.', verified: 'Public URL verified. Clients still need your API key.', error: 'Funnel is not reachable.' }[funnel.state] ?? funnel.state;
+  status.textContent = [label, funnel.publicUrl, funnel.error].filter(Boolean).join(' ');
+}
 function showRoute(route) { for (const id of ['route-status', 'companion-route']) $(id).textContent = route.reason; }
 api.onRoute(showRoute);
 document.querySelectorAll('[data-level]').forEach(button => { button.onclick = async () => {
@@ -107,6 +118,11 @@ document.querySelectorAll('[data-level]').forEach(button => { button.onclick = a
 }; });
 bind('force-model',()=>task('force-model',async()=>{await api.forceModel();await refresh();}));
 bind('retry-setup', () => task('retry-setup', async () => { await api.contribution(state.pendingContribution ?? state.contributionLevel); await refresh(); }));
+bind('funnel-apply', () => task('funnel-apply', async () => {
+  const result = await api.funnelApply({ provider: $('funnel-provider').value, relay: $('funnel-relay').value.trim(), publicUrl: $('funnel-public-url').value.trim(), token: $('funnel-token').value });
+  $('funnel-token').value = ''; renderFunnel(result);
+}));
+bind('funnel-probe', () => task('funnel-probe', async () => { renderFunnel(await api.funnelProbe()); }));
 async function runInference(job, target, privacy=$('privacy-mode').value,companion=false) {
   if (inferenceActive) throw new Error('A request is already running');
   inferenceActive = true; $('send').disabled = $('companion-send').disabled = $('companion-clear').disabled = true;

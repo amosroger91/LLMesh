@@ -19,6 +19,7 @@ import { loadKey } from '../core/key-store.js';
 import { Ollama } from '../core/ollama.js';
 import { OLLAMA_VERSION } from '../core/runtime/pool.js';
 import { startApi } from '../core/api.js';
+import { createNodeFunnel, FunnelRelay, funnelDoctor } from '../core/funnel/index.js';
 import { logger } from '../core/log.js';
 import version from '../../package.json' with {type:'json'};
 const execute=promisify(execFile);
@@ -34,11 +35,23 @@ async function doctor(config){const checks=[];const add=(name,ok,detail)=>checks
     for(const url of config.urls.length?config.urls:['http://127.0.0.1:11434'])add('runtime '+url,await new Ollama(url).available(),'API health');
     try{const status=await adminRequest(config.adminSocket,{command:'status'});add('daemon',true,{instances:status.instances,payments:status.payments?.configured,settlements:status.payments?.jobs?.filter(job=>job.state==='settle-pending').length});}catch{add('daemon',false,'No daemon at '+config.adminSocket);}
   }
-  return {ok:checks.every(check=>check.ok),checks,notes:['Clock/NAT and physical multi-GPU checks require an online deployment.','No runtime is installed by doctor.']};
+  checks.push(...await funnelDoctor(config));
+  return {ok:checks.every(check=>check.ok),checks,notes:['Clock/NAT and physical multi-GPU checks require an online deployment.','No runtime is installed by doctor.','A verified funnel is the supported way to publish this API beyond loopback.']};
 }
 async function main(){const config=loadConfig();
-  if(config.help){print('llmesh serve | status | gpus | models list|install|remove | group create|invite|join|members|revoke | wallet address|balance|claim|refund | keys export|import | doctor | --version');return;}
+  if(config.help){print('llmesh serve | status | gpus | models list|install|remove | group create|invite|join|members|revoke | wallet address|balance|claim|refund | keys export|import | funnel status|probe | funnel relay | doctor | --version');return;}
   if(config.command==='version'){print(version.version);return;}
+  if(config.command==='funnel'&&config.args[0]==='relay'){
+    const log=logger(config.logFormat);
+    if(config.funnelPlainRelay)log('warning',{message:'Funnel relay is listening without TLS. Terminate TLS at this process or at a proxy.'});
+    if(!config.funnelToken&&!config.funnelAllow.length)log('warning',{message:'Funnel relay has no token or node allowlist. Any signed node can publish through it.'});
+    const tls=config.tlsCert&&config.tlsKey?{cert:readFileSync(config.tlsCert),key:readFileSync(config.tlsKey)}:undefined;
+    const relay=new FunnelRelay({token:config.funnelToken,allow:config.funnelAllow,publicBase:config.funnelPublicBase,tls});
+    await relay.listen(config.port,config.host);
+    log('funnel-relay',relay.status());
+    const stop=()=>relay.close().then(()=>process.exit(0),error=>{log('shutdown-error',{error:error.message});process.exit(1);});
+    process.on('SIGTERM',stop);process.on('SIGINT',stop);return;
+  }
   if(config.command==='gpus'){const hardware=await detectHardware();print({gpus:hardware.gpus,placement:planPlacement(hardware,placementOptions(config))},config.json);return;}
   if(config.command==='doctor'){const result=await doctor(config);print(result,config.json);if(!result.ok)process.exitCode=1;return;}
   if(config.command==='keys'){
@@ -78,13 +91,16 @@ async function main(){const config=loadConfig();
   const tls=config.tlsCert&&config.tlsKey?{cert:readFileSync(config.tlsCert),key:readFileSync(config.tlsKey)}:undefined;
   const api=await startApi(service,{host:config.host,port:config.port,tls});let metrics;
   if(config.metricsListen){const url=new URL('http://'+config.metricsListen);if(!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw new Error('Metrics listener must be loopback');
-    metrics=http.createServer((_req,res)=>{const instances=service.status().instances;const lines=['# TYPE llmesh_slots_busy gauge',...instances.map(instance=>`llmesh_slots_busy{instance="${instance.id}"} ${instance.inFlight??0}`),...instances.map(instance=>`llmesh_tokens_per_second{instance="${instance.id}"} ${instance.metrics?.tokensPerSecond??0}`),`llmesh_settlement_pending ${service.ledger.db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE state='settle-pending'").get().count}`];res.end(lines.join('\n')+'\n');});metrics.listen(Number(url.port),url.hostname);}
+    metrics=http.createServer((_req,res)=>{const instances=service.status().instances;const funnel=service.funnel?.status?.()??{provider:'off',state:'off',requests:0};const lines=['# TYPE llmesh_slots_busy gauge',...instances.map(instance=>`llmesh_slots_busy{instance="${instance.id}"} ${instance.inFlight??0}`),...instances.map(instance=>`llmesh_tokens_per_second{instance="${instance.id}"} ${instance.metrics?.tokensPerSecond??0}`),`llmesh_settlement_pending ${service.ledger.db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE state='settle-pending'").get().count}`,'# TYPE llmesh_funnel_up gauge',`llmesh_funnel_up{provider="${funnel.provider??'off'}"} ${funnel.state==='verified'||funnel.state==='pending'?1:0}`,'# TYPE llmesh_funnel_verified gauge',`llmesh_funnel_verified ${funnel.state==='verified'?1:0}`,'# TYPE llmesh_funnel_requests counter',`llmesh_funnel_requests ${Number(funnel.requests)||0}`];res.end(lines.join('\n')+'\n');});metrics.listen(Number(url.port),url.hostname);}
+  service.funnel=createNodeFunnel({provider:config.funnel,relay:config.funnelRelay,token:config.funnelToken,publicUrl:config.funnelPublicUrl,publicBase:config.funnelPublicBase,allowInsecure:[true,'true','1'].includes(config.insecureListen),secret,pubkey:service.pubkey,apiHost:'127.0.0.1',apiPort:api.address().port,tls:Boolean(tls)});
+  if(config.funnel!=='off'){await service.funnel.start();log('funnel',service.funnel.status());}
   const saveGroup=()=>writeFileSync(join(config.dataDir,'group.json'),JSON.stringify(group,null,2),{mode:0o600});
   const reload=async()=>{const next=loadConfig();if(Object.keys(next.energy).length)service.energy.configure(next.energy);
     if(JSON.stringify(placementOptions(next))!==JSON.stringify(placementOptions(config))){await service.drain(service.drainTimeoutMs);await service.configurePlacement(placementOptions(next));service.draining=false;}
     if(service.mesh){service.mesh.allowedWorkers=[...new Set([...next.allowedWorkers,...(group.workers??[])])];service.mesh.trustedCoordinators=[...new Set([...next.trustedCoordinators,...(group.coordinators??[])])];}return service.status();};
   const admin=await startAdmin(config.adminSocket,async message=>{
     const args=message.args??[];
+    if(message.command==='funnel')return args[0]==='probe'?service.funnel.probe():service.funnel?.status()??{provider:'off',state:'off',publicUrl:null};
     if(message.command==='status')return service.status();if(message.command==='drain')return {drained:await service.drain(service.drainTimeoutMs)};if(message.command==='reload')return reload();
     if(message.command==='models'){
       if(!args.length||args[0]==='list')return {catalog:catalog.models,installed:await service.ollama.installed(),instances:service.status().instances};
@@ -108,7 +124,7 @@ async function main(){const config=loadConfig();
     throw new Error('Unsupported admin command');
   });
   service.startContributionManagement(config.level);log('listening',{api:service.apiUrl,admin:config.adminSocket});
-  let closing=false;const close=async()=>{if(closing)return;closing=true;log('draining');api.close();admin.close();metrics?.close();await service.drain(service.drainTimeoutMs);api.closeAllConnections();await service.close();log('stopped');};
+  let closing=false;const close=async()=>{if(closing)return;closing=true;log('draining');await service.drain(service.drainTimeoutMs);await service.funnel?.stop?.();api.close();admin.close();metrics?.close();api.closeAllConnections();await service.close();log('stopped');};
   process.on('SIGTERM',()=>{void close().then(()=>process.exit(0),error=>{log('shutdown-error',{error:error.message});process.exit(1);});});
   process.on('SIGINT',()=>{void close().then(()=>process.exit(0),error=>{log('shutdown-error',{error:error.message});process.exit(1);});});
   process.on('SIGHUP',()=>{void reload().then(()=>log('reloaded'),error=>log('reload-error',{error:error.message}));});

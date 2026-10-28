@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('llmesh', {
   nodeProfile: value=>ipcRenderer.invoke('node-profile',value), privacy: value => ipcRenderer.invoke('privacy',value), status: () => ipcRenderer.invoke('status'), contribution: level => ipcRenderer.invoke('contribution', level), previewRoute: job => ipcRenderer.invoke('route-preview', job),
   forceModel:()=>ipcRenderer.invoke('force-model'), runtime: () => ipcRenderer.invoke('runtime'), companionChat: job => ipcRenderer.invoke('companion-chat',job), chat: job => ipcRenderer.invoke('chat', job), cancel: () => ipcRenderer.invoke('cancel'),
-  copy: name => ipcRenderer.invoke('copy', name), energy: value => ipcRenderer.invoke('energy', value), scanPower: () => ipcRenderer.invoke('power-scan'),
+  copy: name => ipcRenderer.invoke('copy', name), funnelApply: value => ipcRenderer.invoke('funnel-apply', value), funnelProbe: () => ipcRenderer.invoke('funnel-probe'), energy: value => ipcRenderer.invoke('energy', value), scanPower: () => ipcRenderer.invoke('power-scan'),
   connectPayments: value => ipcRenderer.invoke('payments-connect', value), refreshPayments: () => ipcRenderer.invoke('payments-refresh'), registerTokens: () => ipcRenderer.invoke('payments-register'),
   refundPayment: id => ipcRenderer.invoke('payments-refund', id),
   providerModels:value=>ipcRenderer.invoke('provider-models',value),providerAdd:value=>ipcRenderer.invoke('provider-add',value),providerRemove:id=>ipcRenderer.invoke('provider-remove',id),providerToggle:id=>ipcRenderer.invoke('provider-toggle',id),

@@ -10,6 +10,7 @@ import { Wallet, randomBytes, hexlify } from 'ethers';
 import { Payments } from '../payments.js';
 import { finalizeEvent } from 'nostr-tools/pure';
 import { discoverProvider } from '../core/providers.js';
+import { createNodeFunnel } from '../core/funnel/index.js';
 
 let service, api, window, quitting = false;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -37,6 +38,29 @@ else {
     if(existsSync(donationsPath))service.providers.configure(JSON.parse(safeStorage.decryptString(readFileSync(donationsPath))));
     api = await startApi(service, { port: Number(process.env.LLMESH_PORT ?? 7337) });
     await service.initialize();
+    const funnelFile = join(directory, 'funnel.json');
+    const funnelTokenFile = join(directory, 'funnel-token.enc');
+    function readFunnel() {
+      let file = {};
+      try { if (existsSync(funnelFile)) file = JSON.parse(readFileSync(funnelFile, 'utf8')); } catch { file = {}; }
+      let token = process.env.LLMESH_FUNNEL_TOKEN || null;
+      if (!token && existsSync(funnelTokenFile)) token = safeStorage.decryptString(readFileSync(funnelTokenFile));
+      return { provider: process.env.LLMESH_FUNNEL || file.provider || 'off', relay: process.env.LLMESH_FUNNEL_RELAY || file.relay || '', publicUrl: process.env.LLMESH_FUNNEL_PUBLIC_URL || file.publicUrl || '', token };
+    }
+    async function applyFunnel(input = {}, persist = true) {
+      const current = readFunnel();
+      const next = { provider: input.provider || current.provider || 'off', relay: input.relay ?? current.relay, publicUrl: input.publicUrl ?? current.publicUrl, token: input.token || current.token || null, allowInsecure: false, secret, pubkey: service.pubkey, apiHost: '127.0.0.1', apiPort: api.address().port };
+      const node = createNodeFunnel(next);
+      await service.funnel?.stop?.();
+      service.funnel = node;
+      if (persist) {
+        writeFileSync(funnelFile, JSON.stringify({ provider: node.settings.provider, relay: node.settings.relay, publicUrl: node.settings.publicUrl }), { mode: 0o600 });
+        if (input.token) writeFileSync(funnelTokenFile, safeStorage.encryptString(input.token));
+      }
+      if (node.settings.provider !== 'off') await node.start();
+      return node.status();
+    }
+    await applyFunnel(readFunnel(), false).catch(error => service.emit('progress', { status: `Funnel did not start: ${error.message}` }));
     window = new BrowserWindow({ width: 1180, height: 850, minWidth: 850, minHeight: 650, show: process.env.LLMESH_SMOKE !== '1', backgroundColor: '#10151d', icon: join(here, '../../assets/branding/icon.png'),
       webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -50,6 +74,8 @@ else {
       return fn(...args);
     });
     handle('status', () => service.status());
+    handle('funnel-apply', value => applyFunnel(value ?? {}, true));
+    handle('funnel-probe', () => service.funnel?.probe?.() ?? Promise.resolve({ provider: 'off', state: 'off', publicUrl: null }));
     handle('privacy', value => service.configurePrivacy(value));
     handle('node-profile',value=>service.configureNodeProfile(value));
     const saveDonations=()=>writeFileSync(donationsPath,safeStorage.encryptString(JSON.stringify(service.providers.configuration())));
@@ -77,7 +103,7 @@ else {
     handle('contribution', level => service.configureContribution(level));
     handle('force-model',()=>service.configureContribution(service.contributionLevel,{forceMemory:true}));
     handle('route-preview', job => service.route(job));
-    handle('copy', name => { const state = service.status(); const value = { endpoint: state.api + '/v1', apiKey: service.apiKey, modelId: 'llmesh-auto', modelName: 'LLMesh Auto', wallet: state.payments.address, pubkey: state.pubkey }[name]; if (value) clipboard.writeText(value); });
+    handle('copy', name => { const state = service.status(); const value = { endpoint: state.api + '/v1', apiKey: service.apiKey, modelId: 'llmesh-auto', modelName: 'LLMesh Auto', wallet: state.payments.address, pubkey: state.pubkey, funnel: state.funnel?.publicUrl }[name]; if (!value) throw new Error(name === 'funnel' ? 'Funnel has no public URL yet' : 'Nothing to copy'); clipboard.writeText(value); });
     handle('energy', settings => service.energy.configure(settings));
     handle('power-scan', () => service.energy.scan());
     handle('payments-connect', async settings => { if (service.busy || service.activeRequests || service.requests || service.installing) throw new Error('Stop active requests before changing payment networks');
@@ -120,7 +146,7 @@ else {
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', event => {
     if (quitting || !service) return; event.preventDefault(); quitting = true;
-    api?.closeAllConnections(); api?.close(); service.close().finally(() => app.quit());
+    Promise.resolve(service.funnel?.stop?.()).finally(() => { api?.closeAllConnections(); api?.close(); service.close().finally(() => app.quit()); });
   });
   });
 }

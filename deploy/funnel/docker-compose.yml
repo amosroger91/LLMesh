@@ -1,0 +1,17 @@
+# LLMesh funnel relay. Set a public base and a token before publishing it.
+#   LLMESH_FUNNEL_PUBLIC_BASE=https://funnel.example
+#   LLMESH_FUNNEL_TOKEN=<16 or more random characters>
+services:
+  relay:
+    image: node:24-bookworm-slim
+    working_dir: /opt/llmesh
+    command: ["node", "src/cli/index.js", "funnel", "relay", "--listen", "0.0.0.0:7443"]
+    volumes:
+      - ../..:/opt/llmesh:ro
+    ports:
+      - "7443:7443"
+    environment:
+      LLMESH_FUNNEL_PUBLIC_BASE: ${LLMESH_FUNNEL_PUBLIC_BASE:-http://127.0.0.1:7443}
+      LLMESH_FUNNEL_TOKEN: ${LLMESH_FUNNEL_TOKEN:-}
+      LLMESH_FUNNEL_ALLOW: ${LLMESH_FUNNEL_ALLOW:-}
+    restart: unless-stopped

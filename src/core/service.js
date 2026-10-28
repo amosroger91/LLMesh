@@ -60,6 +60,7 @@ export class Service extends EventEmitter {
       describe: () => ({ working:Boolean(this.busy), memoryBlocked:this.setup.state==='error'&&memoryFailure(this.setup.message), profile:this.nodeProfile, models: this.servingModels(), busy: Number(this.draining || !this.localSlots().some(slot=>slot.free>0)), slots: this.localSlots(), devices: this.browserWorkers.snapshot().map(device=>({id:device.id,name:device.name,profile:device.profile,model:device.engineModel||device.model,ready:device.state==='ready',disabled:device.state==='paused',memoryBlocked:device.memoryBlocked===true,busy:Boolean(device.busy)})),
         contribution: this.profile?.level ?? this.contributionLevel,
         loadedModel: this.loadedModel, hardware: this.hardwareSummary(),
+        ...(this.funnel?.advertisement?.() ?? {}),
         wallet: this.payments?.wallet.address, chainId: this.payments?.state.chainId, escrow: this.payments?.settings.escrow }),
       onDelivery: async payment => {
         await this.payments.acceptDelivery(payment);
@@ -194,7 +195,7 @@ export class Service extends EventEmitter {
       contributionLevel: this.contributionLevel, pendingContribution: this.pendingContribution, setup: this.setup,
       currentModel: this.currentModel, lastRoute: this.lastRoute, installing: this.installing, busy: this.busy, workers: this.mesh?.workers() ?? [],
       account: this.ledger.account(this.pubkey), energy: this.energy.status(), payments: this.payments?.status() ?? { configured: false },
-      api: this.apiUrl, activeRequests: this.requests ?? 0 };
+      api: this.apiUrl, activeRequests: this.requests ?? 0, funnel: this.funnel?.status?.() ?? { provider: 'off', state: 'off', publicUrl: null } };
   }
   async install(id) {
     if (this.busy || this.installing) throw new Error('Node is busy');
@@ -362,5 +363,5 @@ export class Service extends EventEmitter {
   }
   async drain(timeoutMs=30000){this.draining=true;const until=Date.now()+timeoutMs;while((this.busy||this.requests)&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,25));return !(this.busy||this.requests);}
   receipt(id, payer) { return this.settlements.receipt(id, payer); }
-  async close() { await this.drain(this.drainTimeoutMs??30000); this.closed = true; this.settlements.close(); clearInterval(this.contributionTimer); await this.mesh?.close(); await this.ollama.close(); this.payments?.close(); this.providers.close(); this.browserWorkers.close(); this.energy.close(); this.ledger.close(); }
+  async close() { await this.drain(this.drainTimeoutMs??30000); this.closed = true; this.settlements.close(); clearInterval(this.contributionTimer); await this.funnel?.stop?.(); await this.mesh?.close(); await this.ollama.close(); this.payments?.close(); this.providers.close(); this.browserWorkers.close(); this.energy.close(); this.ledger.close(); }
 }

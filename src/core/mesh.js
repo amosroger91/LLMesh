@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import { finalizeEvent, verifyEvent } from 'nostr-tools/pure';
 import { hash } from './identity.js';
 import { validateMessage } from './mesh-protocol.js';
+import { parseFunnelAdvertisement } from './funnel/protocol.js';
 
 export function rankWorkers(workers, model) {
   return workers.filter(w => w.models.includes(model) && w.busy === 0 && Date.now() - w.seen < 35000)
@@ -110,6 +111,7 @@ export class Mesh extends EventEmitter {
           if(!model||model.id!==slot.model||!/^donated:[a-z0-9-]{1,80}$/.test(model.id)||!Number.isInteger(model.rank)||model.rank<1||model.rank>5||!Number.isFinite(model.parametersB)||model.parametersB<=0||model.parametersB>10000||typeof model.provider!=='string'||model.provider.length>40||typeof model.upstreamModel!=='string'||model.upstreamModel.length>200||!Number.isSafeInteger(slot.creditBudget)||slot.creditBudget<0||slot.creditBudget>10000000)throw new Error('Invalid donated API capability');
         }else if(slot.model.startsWith('donated:'))throw new Error('Unclassified third-party capability');
       }
+      peer.funnel = parseFunnelAdvertisement(info.funnel);
       peer.memoryBlocked=info.memoryBlocked===true;peer.working=info.working===true;
       peer.profile=info.profile?nodeProfile(info.profile):undefined;
       peer.slots=info.slots;
@@ -182,7 +184,7 @@ export class Mesh extends EventEmitter {
   }
   workers() {
     return [...this.byIdentity.values()].filter(peer=>this.allowedWorkers.includes(peer.pubkey)).flatMap(peer=>{
-      const base={devices:peer.devices,pubkey:peer.pubkey,models:peer.models,busy:Math.max(peer.busy,peer.inFlight),seen:peer.seen,latencyMs:peer.latencyMs,
+      const base={devices:peer.devices,pubkey:peer.pubkey,funnel:peer.funnel,models:peer.models,busy:Math.max(peer.busy,peer.inFlight),seen:peer.seen,latencyMs:peer.latencyMs,
         firstTokenMs:peer.firstTokenMs,tokensPerSecond:peer.tokensPerSecond,hardware:peer.hardware,loadedModel:peer.loadedModel,metrics:{...peer.metrics,...peer.instanceMetrics},
         working:peer.working,memoryBlocked:peer.memoryBlocked,profile:peer.profile,supportsTools:peer.supportsTools,contribution:peer.contribution,wallet:peer.wallet,chainId:peer.chainId,escrow:peer.escrow};
       if(!peer.slots)return [base];

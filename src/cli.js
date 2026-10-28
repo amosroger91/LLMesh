@@ -3,6 +3,7 @@ import { resolve, join } from 'node:path';
 import { generateSecretKey } from './identity.js';
 import { Service } from './service.js';
 import { startApi } from './api.js';
+import { createNodeFunnel } from './core/funnel/index.js';
 import { Payments } from './payments.js';
 import { Wallet } from 'ethers';
 import { loadKey } from './key-store.js';
@@ -26,9 +27,15 @@ const service = new Service({ directory, secret: Buffer.from(identity, 'hex'),
 const api = await startApi(service, { port: Number(process.env.LLMESH_PORT ?? 7337) });
 service.on('progress', item => console.log(JSON.stringify(item)));
 await service.initialize();
+if (process.env.LLMESH_FUNNEL && process.env.LLMESH_FUNNEL !== 'off') {
+  service.funnel = createNodeFunnel({ provider: process.env.LLMESH_FUNNEL, relay: process.env.LLMESH_FUNNEL_RELAY, token: process.env.LLMESH_FUNNEL_TOKEN,
+    publicUrl: process.env.LLMESH_FUNNEL_PUBLIC_URL, publicBase: process.env.LLMESH_FUNNEL_PUBLIC_BASE, allowInsecure: process.env.LLMESH_INSECURE_LISTEN === '1',
+    secret: Buffer.from(identity, 'hex'), pubkey: service.pubkey, apiHost: '127.0.0.1', apiPort: api.address().port });
+  await service.funnel.start();
+}
 console.log(JSON.stringify(service.status(), null, 2));
 service.startContributionManagement(levelIndex >= 0 ? process.argv[levelIndex + 1] : service.contributionLevel);
 let closing = false;
-async function close() { if (closing) return; closing = true; api.closeAllConnections(); await new Promise(r => api.close(r)); await service.close(); }
+async function close() { if (closing) return; closing = true; await service.funnel?.stop?.(); api.closeAllConnections(); await new Promise(r => api.close(r)); await service.close(); }
 process.on('SIGINT', () => close().then(() => process.exit(0)));
 process.on('SIGTERM', () => close().then(() => process.exit(0)));

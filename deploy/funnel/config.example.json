@@ -1,0 +1,6 @@
+{
+  "listen": "127.0.0.1:7337",
+  "funnel": "relay",
+  "funnelRelay": "https://funnel.example",
+  "level": "medium"
+}
