@@ -1,3 +1,4 @@
+import {memoryFailure} from '../shared/memory-status.js';
 import {servingTopology} from '../browser/serving-topology.js';
 import {nodeProfile as validateProfile} from '../shared/node-profile.js';
 import {profileEditor} from '../browser/profile-editor.js';
@@ -12,11 +13,11 @@ import {ephemeralKey,publicKey,secureChannel,sendData,reassemble} from '../brows
 import {renderNetwork} from '../browser/network-map.js';
 const $=id=>document.getElementById(id);
 let nodeProfile;try{nodeProfile=validateProfile(JSON.parse(localStorage.getItem('llmesh.node-profile')??'{}'));}catch{nodeProfile=validateProfile();}
-let engine,engineModel,toolsEnabled=false,peer,connection,channel,approved=false,busy=false,enabled=false,camera,activeJob,harvesting=false,connecting=false,retryAfter=0,presence,relay,visibleNodes=[],connectedGateway;const traffic={requests:0,responses:0};
+let memoryBlocked=false,engine,engineModel,toolsEnabled=false,peer,connection,channel,approved=false,busy=false,enabled=false,camera,activeJob,harvesting=false,connecting=false,retryAfter=0,presence,relay,visibleNodes=[],connectedGateway;const traffic={requests:0,responses:0};
 const error=error=>{$('error').textContent=error.message??String(error);};
 const activity=value=>{$('activity').textContent=value;};
 async function report(message){if(approved&&connection?.open){await channel.send(message);if(['delta','tool_calls','done','error'].includes(message.type)){traffic.responses++;presence?.changed();}}}
-async function reportState(){await report({type:'state',state:engine?(enabled&&!document.hidden?'ready':'paused'):'paired',engineModel,profile:nodeProfile,supportsTools:toolsEnabled,toolAdapter:'json-schema-v1'});}
+async function reportState(){await report({type:'state',memoryBlocked,state:memoryBlocked?'error':engine?(enabled&&!document.hidden?'ready':'paused'):'paired',engineModel,profile:nodeProfile,supportsTools:toolsEnabled,toolAdapter:'json-schema-v1'});}
 async function work(message){
   if(message.type==='cancel'){if(activeJob===message.id)await engine?.interruptGenerate();return;}
   if(message.type==='pending'){$('account').textContent='Waiting for approval on your desktop…';return;}
@@ -31,7 +32,7 @@ async function work(message){
   try{let used=0;
     for await(const part of browserInference(engine,job)){await report({...part,id});if(part.type==='done')used=part.promptTokens+part.tokens;}
     $('status').textContent=`Completed ${used} model tokens. ${harvesting?'Earnings directed to your desktop.':'Compute donated; wallet disabled.'}`;
-  }catch(cause){await report({type:'error',id,error:String(cause.message).slice(0,350)}).catch(error);}
+  }catch(cause){memoryBlocked=memoryFailure(cause.message);await report({type:'error',id,error:String(cause.message).slice(0,350)}).catch(error);}
   finally{busy=false;presence?.changed();activeJob=null;activity(enabled?'READY':'PAUSED');await reportState().catch(error);}
 }
 async function connect(raw,guest,viaRelay=false){
@@ -54,7 +55,7 @@ async function connect(raw,guest,viaRelay=false){
   connection.on('open',()=>{if(connection!==current)return;connection.send({type:'join',nonce:pairing.nonce,publicKey:exported,harvest:$('harvest').checked,name:nodeProfile.name});});
   $('account').textContent=guest?'Connecting to a community gateway…':'Connecting securely to your desktop…';$('pair-code').value='';history.replaceState(null,'',location.pathname);
 }
-$('start').onclick=async()=>{try{$('error').textContent='';$('start').disabled=true;activity('LOADING');
+$('start').onclick=async()=>{try{memoryBlocked=false;presence?.changed();$('error').textContent='';$('start').disabled=true;activity('LOADING');
   if(!navigator.gpu)throw new Error('WebGPU is unavailable. Use a supported browser with hardware acceleration enabled.');
   const adapter=await navigator.gpu.requestAdapter();if(!adapter)throw new Error('No WebGPU adapter is available');
   if(!engine){const {CreateMLCEngine}=await import('@mlc-ai/web-llm');engineModel=adapter.features.has('shader-f16')?'Qwen3.5-0.8B-q4f16_1-MLC':'Qwen3.5-0.8B-q4f32_1-MLC';
@@ -62,7 +63,7 @@ $('start').onclick=async()=>{try{$('error').textContent='';$('start').disabled=t
   if(!toolsEnabled){$('progress').textContent='Checking this model’s tool-calling support…';toolsEnabled=await probeBrowserTools(engine);}
   enabled=true;$('model').textContent='Qwen3.5 · 0.8B';$('backend').textContent=engineModel+(toolsEnabled?' · tool self-test passed':' · text only');$('start').hidden=true;$('stop').hidden=false;activity(approved?'READY':'FINDING GATEWAY');presence?.publish();presence?.refresh();
   $('status').textContent=approved?'Ready to serve requests. Leave this tab open.':'Model ready. Finding a community gateway; no wallet required. Leave this tab open.';await reportState();
- }catch(cause){error(cause);activity('SETUP ERROR');}finally{$('start').disabled=false;}};
+ }catch(cause){memoryBlocked=memoryFailure(cause.message);presence?.changed();await reportState().catch(error);error(cause);activity(memoryBlocked?'NOT ENOUGH MEMORY':'SETUP ERROR');}finally{$('start').disabled=false;}};
 $('stop').onclick=async()=>{enabled=false;presence?.changed();$('start').textContent='Resume serving';$('start').hidden=false;$('stop').hidden=true;activity(busy?'FINISHING REQUEST':'PAUSED');await reportState().catch(error);};
 $('connect').onclick=()=>{void connect($('pair-code').value.trim()).catch(error);};
 function stopCamera(){camera?.getTracks().forEach(track=>track.stop());camera=null;$('camera').hidden=true;$('scan').textContent='Scan desktop QR';}
@@ -77,8 +78,8 @@ if(location.hash.startsWith('#pair=')){$('wallet-link').hidden=false;void connec
 renderNetwork($('map'),{nodes:[],edges:[]});
 
 $('harvest').onchange=()=>{if(approved&&!connection?.guest){harvesting=$('harvest').checked;void report({type:'harvest',enabled:harvesting}).catch(error);$('account').textContent=harvesting?'Harvesting to paired desktop account':'Trusted desktop linked · harvesting disabled';}else if($('harvest').checked){$('account').textContent='Scan your desktop QR and approve this device to harvest there.';}};
-presence=new Presence(()=>({kind:'browser',name:nodeProfile.name,profile:nodeProfile,busy,model:engineModel??'',ready:Boolean(engine)&&enabled&&!document.hidden,connected:approved,gatewayId:approved?connectedGateway:undefined,traffic:{...traffic},transport:connection?.transport??(approved?'webrtc':'none')}),nodes=>{
- visibleNodes=nodes;const active=servingTopology({nodes});$('online').textContent=String(active.nodes.length);$('discovery').textContent=active.visitors+' visitors; only serving devices appear on the map';
+presence=new Presence(()=>({kind:'browser',name:nodeProfile.name,profile:nodeProfile,busy,memoryBlocked,model:engineModel??'',ready:!memoryBlocked&&Boolean(engine)&&enabled&&!document.hidden,connected:approved,gatewayId:approved?connectedGateway:undefined,traffic:{...traffic},transport:connection?.transport??(approved?'webrtc':'none')}),nodes=>{
+ visibleNodes=nodes;const active=servingTopology({nodes});$('online').textContent=String(active.nodes.length);$('discovery').textContent=active.visitors+' visitors; ready, working and memory-blocked devices appear on the map';
  renderNetwork($('map'),{nodes:nodes.map(node=>({...node,kind:node.kind==='desktop'?'peer':'browser'})),edges:[]});
  if(enabled&&!approved&&!connecting&&!$('harvest').checked&&Date.now()>=retryAfter){const target=nodes.find(node=>node.kind==='desktop'&&node.gateway),gateway=target?{...target.gateway,sessionId:target.id}:null;if(gateway){retryAfter=Date.now()+20000;void connect('',gateway).catch(cause=>{connecting=false;retryAfter=Date.now()+20000;error(cause);});}}
 });

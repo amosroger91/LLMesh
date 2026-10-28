@@ -1,3 +1,4 @@
+import {memoryFailure} from '../shared/memory-status.js';
 import {nodeProfile} from '../shared/node-profile.js';
 import {ProviderPool} from './providers.js';
 import { BrowserWorkers } from './browser-workers.js';
@@ -55,7 +56,7 @@ export class Service extends EventEmitter {
     if (!CONTRIBUTION[this.contributionLevel]) this.contributionLevel = 'medium';
     this.setup = { state: 'waiting', message: 'Automatic hardware setup will start shortly.' };
     if (network) this.mesh = new Mesh({ secret, topic, allowedWorkers, trustedCoordinators,
-      describe: () => ({ profile:this.nodeProfile, models: this.servingModels(), busy: Number(this.draining || !this.localSlots().some(slot=>slot.free>0)), slots: this.localSlots(), devices: this.browserWorkers.snapshot().map(device=>({id:device.id,name:device.name,profile:device.profile,model:device.engineModel||device.model,ready:device.state==='ready',busy:Boolean(device.busy)})),
+      describe: () => ({ working:Boolean(this.busy), memoryBlocked:this.setup.state==='error'&&memoryFailure(this.setup.message), profile:this.nodeProfile, models: this.servingModels(), busy: Number(this.draining || !this.localSlots().some(slot=>slot.free>0)), slots: this.localSlots(), devices: this.browserWorkers.snapshot().map(device=>({id:device.id,name:device.name,profile:device.profile,model:device.engineModel||device.model,ready:device.state==='ready',memoryBlocked:device.memoryBlocked===true,busy:Boolean(device.busy)})),
         contribution: this.profile?.level ?? this.contributionLevel,
         loadedModel: this.loadedModel, hardware: this.hardwareSummary(),
         wallet: this.payments?.wallet.address, chainId: this.payments?.state.chainId, escrow: this.payments?.settings.escrow }),
@@ -177,11 +178,11 @@ export class Service extends EventEmitter {
     this.ready = (await this.ollama.installed().catch(() => [])).filter(id => catalog.models.some(m => m.id === id));
   }
   topology() {
-    const nodes=[{id:this.pubkey,name:this.nodeProfile.name,profile:this.nodeProfile,kind:'desktop',connected:true,ready:!this.draining&&(this.nativeModels().length>0||this.providers.snapshot().some(provider=>provider.state==='ready')),busy:Boolean(this.busy),model:this.currentModel??this.assignedModel}],edges=[];
+    const nodes=[{id:this.pubkey,name:this.nodeProfile.name,profile:this.nodeProfile,kind:'desktop',connected:true,memoryBlocked:this.nativeModels().length===0&&this.setup.state==='error'&&memoryFailure(this.setup.message),ready:!this.draining&&(this.nativeModels().length>0||this.providers.snapshot().some(provider=>provider.state==='ready')),busy:Boolean(this.busy),model:this.currentModel??this.assignedModel}],edges=[];
     const add=(node,parent)=>{if(nodes.length>=200||nodes.some(item=>item.id===node.id))return;nodes.push(node);edges.push({from:parent,to:node.id});};
-    for(const worker of this.mesh?.workers()??[]){add({id:worker.pubkey,name:worker.profile?.name??worker.pubkey.slice(0,10),profile:worker.profile,kind:'peer',connected:true,ready:worker.models.length>0,busy:Boolean(worker.busy),model:worker.models[0]},this.pubkey);
+    for(const worker of this.mesh?.workers()??[]){add({id:worker.pubkey,name:worker.profile?.name??worker.pubkey.slice(0,10),profile:worker.profile,kind:'peer',connected:true,memoryBlocked:worker.memoryBlocked===true,ready:worker.models.length>0,busy:worker.working===true,model:worker.models[0]},this.pubkey);
       for(const device of worker.devices??[])add({...device,kind:'browser'},worker.pubkey);}
-    for(const device of this.browserWorkers.snapshot())add({id:device.id,name:device.name,profile:device.profile,kind:'browser',connected:true,ready:device.state==='ready',busy:Boolean(device.busy),model:device.engineModel||device.state},this.pubkey);
+    for(const device of this.browserWorkers.snapshot())add({id:device.id,name:device.name,profile:device.profile,kind:'browser',connected:true,ready:device.state==='ready',memoryBlocked:device.memoryBlocked===true,busy:Boolean(device.busy),model:device.engineModel||device.state},this.pubkey);
     for(const provider of this.providers.snapshot())if(provider.state==='ready')add({id:provider.id,name:provider.provider+' API',kind:'provider',state:provider.state,busy:Boolean(provider.busy),model:provider.upstreamModel},this.pubkey);
     return {nodes,edges,scope:'Known trusted peers and linked browser devices'};
   }
