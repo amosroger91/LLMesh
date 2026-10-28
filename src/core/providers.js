@@ -55,8 +55,9 @@ export class ProviderPool {
     this.db.prepare('INSERT OR IGNORE INTO provider_usage(provider,day) VALUES (?,?)').run(provider.id,day);
     try{
       const payload={model:provider.model,messages:job.messages,stream:true,stream_options:{include_usage:true},[provider.maxTokensField]:job.maxTokens,...(job.tools.length?{tools:job.tools,tool_choice:job.tool_choice}:{})};
+      provider.metrics.requestsSent=(provider.metrics.requestsSent??0)+1;
       const response=await fetch(provider.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+provider.apiKey,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:combined,redirect:'error'});
-      if(!response.ok){
+      if(!response.ok){provider.metrics.responseChunks=(provider.metrics.responseChunks??0)+1;
         if(response.status===413){
           // Extract only numeric limits: an upstream error may echo private input,
           // organization IDs or credentials, so never expose the raw error body.
@@ -67,10 +68,16 @@ export class ProviderPool {
           const detail=limit?` Token limit ${limit}${requested?'; requested '+requested[1]:''}.`:'';
           throw Object.assign(new Error(`Donated API HTTP 413: provider rejected an oversized request.${detail} Compact the conversation/tools or use another worker. Smaller requests can still use this donation.`),{providerRejected:true,providerInstance:job.instanceId});
         }
+        if(response.status===429){
+          let daily=false;try{const raw=await response.text();if(raw.length<64000){const body=JSON.parse(raw);daily=/daily|per.day|requests.per.day|free.model.*day/i.test(String(body.error?.message??''));}}catch{}
+          const retry=response.headers.get('retry-after'),seconds=retry&&/^\d+(?:\.\d+)?$/.test(retry)?Number(retry):retry?Math.max(0,(Date.parse(retry)-Date.now())/1000):daily?86400:60;
+          const wait=Math.min(86400,Math.max(1,Number.isFinite(seconds)?seconds:60));provider.cooldown=Date.now()+wait*1000;
+          throw Object.assign(new Error(`${provider.kind} returned HTTP 429: ${daily?'daily free-tier request quota exhausted':'provider rate limit reached'}. Retry in ${Math.ceil(wait)} seconds. This key is registered; another eligible worker can serve requests.`),{providerRejected:true,providerInstance:job.instanceId});
+        }
         provider.cooldown=Date.now()+(response.status===429?60000:15000);throw new Error('Donated API HTTP '+response.status+'; donation temporarily paused');
       }
       const decoder=new TextDecoder();let buffer='';
-      for await(const bytes of response.body){buffer+=decoder.decode(bytes,{stream:true});if(buffer.length>1048576)throw new Error('Provider frame too large');let end;
+      for await(const bytes of response.body){provider.metrics.responseChunks=(provider.metrics.responseChunks??0)+1;buffer+=decoder.decode(bytes,{stream:true});if(buffer.length>1048576)throw new Error('Provider frame too large');let end;
         while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);if(!line.startsWith('data:'))continue;const data=line.slice(5).trim();if(data==='[DONE]')continue;
           const chunk=JSON.parse(data);if(chunk.error)throw new Error('Provider failed inference');if(typeof chunk.model==='string')reportedModel=chunk.model.slice(0,200);if(chunk.usage??chunk.x_groq?.usage)usage=chunk.usage??chunk.x_groq?.usage;
           const choice=chunk.choices?.[0];if(choice?.finish_reason)finishReason=choice.finish_reason;

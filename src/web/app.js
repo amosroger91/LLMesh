@@ -1,3 +1,4 @@
+import {browserInference,probeBrowserTools} from '../browser/tool-inference.js';
 import {phoneAlive} from './phone-alive.js';
 import {RelayPeer} from '../browser/relay-peer.js';
 import {Presence} from '../browser/presence.js';
@@ -7,34 +8,31 @@ import jsQR from 'jsqr';
 import {ephemeralKey,publicKey,secureChannel,sendData,reassemble} from '../browser/secure-channel.js';
 import {renderNetwork} from '../browser/network-map.js';
 const $=id=>document.getElementById(id);
-let engine,engineModel,peer,connection,channel,approved=false,busy=false,enabled=false,camera,activeJob,harvesting=false,connecting=false,retryAfter=0,presence,relay,visibleNodes=[];
+let engine,engineModel,toolsEnabled=false,peer,connection,channel,approved=false,busy=false,enabled=false,camera,activeJob,harvesting=false,connecting=false,retryAfter=0,presence,relay,visibleNodes=[],connectedGateway;const traffic={requests:0,responses:0};
 const error=error=>{$('error').textContent=error.message??String(error);};
 const activity=value=>{$('activity').textContent=value;};
-async function report(message){if(approved&&connection?.open)await channel.send(message);}
-async function reportState(){await report({type:'state',state:engine?(enabled&&!document.hidden?'ready':'paused'):'paired',engineModel});}
+async function report(message){if(approved&&connection?.open){await channel.send(message);if(['delta','tool_calls','done','error'].includes(message.type)){traffic.responses++;presence?.changed();}}}
+async function reportState(){await report({type:'state',state:engine?(enabled&&!document.hidden?'ready':'paused'):'paired',engineModel,supportsTools:toolsEnabled,toolAdapter:'json-schema-v1'});}
 async function work(message){
   if(message.type==='cancel'){if(activeJob===message.id)await engine?.interruptGenerate();return;}
   if(message.type==='pending'){$('account').textContent='Waiting for approval on your desktop…';return;}
-  if(message.type==='approved'){approved=true;connecting=false;harvesting=message.scope==='worker-only';$('account').textContent=harvesting?'Harvesting to desktop account '+message.account.slice(0,16)+'…':(message.scope==='trusted-donation'?'Trusted desktop linked · harvesting disabled · ':'Guest donation · ')+(connection?.transport==='encrypted-relay'?'encrypted relay fallback':'direct WebRTC')+' · wallet disabled';await reportState();activity(engine&&enabled?'READY':'PAIRED');$('status').textContent=engine&&enabled?'Ready · connected to desktop via '+(connection?.transport==='encrypted-relay'?'encrypted relay fallback':'direct WebRTC'):'Connected · download the model to begin serving';return;}
+  if(message.type==='approved'){approved=true;connectedGateway=message.discoveryId??connectedGateway;presence?.changed();connecting=false;harvesting=message.scope==='worker-only';$('account').textContent=harvesting?'Harvesting to desktop account '+message.account.slice(0,16)+'…':(message.scope==='trusted-donation'?'Trusted desktop linked · harvesting disabled · ':'Guest donation · ')+(connection?.transport==='encrypted-relay'?'encrypted relay fallback':'direct WebRTC')+' · wallet disabled';await reportState();activity(engine&&enabled?'READY':'PAIRED');$('status').textContent=engine&&enabled?'Ready · connected to desktop via '+(connection?.transport==='encrypted-relay'?'encrypted relay fallback':'direct WebRTC'):'Connected · download the model to begin serving';return;}
   if(message.type==='network')return;
   if(message.type==='revoked'){approved=false;enabled=false;connection.close();activity('REVOKED');$('account').textContent='Desktop revoked this device. Scan a new QR to reconnect.';return;}
   if(message.type!=='job')return;
-  const {job,id}=message;
-  if(busy||!engine||!enabled||document.hidden){await report({type:'error',id,error:'Browser worker is not available'});return;}
-  if(!Array.isArray(job?.messages)||job.messages.length>256||JSON.stringify(job.messages).length>90000||job.tools?.length||!Number.isInteger(job.maxTokens)||job.maxTokens<1||job.maxTokens>2048){await report({type:'error',id,error:'Unsupported browser inference request'});return;}
-  busy=true;activeJob=id;activity('WORKING');$('status').textContent='Serving a request for your mesh…';
-  try{let usage,finishReason='stop';
-    const stream=await engine.chat.completions.create({messages:job.messages,stream:true,stream_options:{include_usage:true},max_tokens:job.maxTokens,extra_body:{enable_thinking:false}});
-    for await(const chunk of stream){const choice=chunk.choices[0];if(choice?.delta.content)await report({type:'delta',id,text:choice.delta.content});if(choice?.finish_reason)finishReason=choice.finish_reason;if(chunk.usage)usage=chunk.usage;}
-    if(!usage||!Number.isSafeInteger(usage.prompt_tokens)||!Number.isSafeInteger(usage.completion_tokens))throw new Error('Inference did not provide metered usage');
-    await report({type:'done',id,promptTokens:usage.prompt_tokens,tokens:usage.completion_tokens,finishReason});
-    $('status').textContent=`Completed ${usage.prompt_tokens+usage.completion_tokens} model tokens. ${harvesting?'Earnings directed to your desktop.':'Compute donated; wallet disabled.'}`;
+  const {job,id}=message;traffic.requests++;presence?.changed();
+  if(busy||!engine||!enabled||document.hidden){await reportState();await report({type:'error',id,error:busy?'Phone is already working on another request':!engine?'Phone model is not loaded':!enabled?'Phone serving is paused':'Phone tab is hidden or the screen is locked. Return to the tab and enable Keep phone alive.'});return;}
+  if(!Array.isArray(job?.messages)||job.messages.length>256||JSON.stringify({messages:job.messages,tools:job.tools}).length>90000||(job.tools?.length&&!toolsEnabled)||!Number.isInteger(job.maxTokens)||job.maxTokens<1||job.maxTokens>2048){await report({type:'error',id,error:'Unsupported browser inference request'});return;}
+  busy=true;presence?.changed();activeJob=id;activity('WORKING');$('status').textContent='Serving a request for your mesh…';
+  try{let used=0;
+    for await(const part of browserInference(engine,job)){await report({...part,id});if(part.type==='done')used=part.promptTokens+part.tokens;}
+    $('status').textContent=`Completed ${used} model tokens. ${harvesting?'Earnings directed to your desktop.':'Compute donated; wallet disabled.'}`;
   }catch(cause){await report({type:'error',id,error:String(cause.message).slice(0,350)}).catch(error);}
-  finally{busy=false;activeJob=null;activity(enabled?'READY':'PAUSED');await reportState().catch(error);}
+  finally{busy=false;presence?.changed();activeJob=null;activity(enabled?'READY':'PAUSED');await reportState().catch(error);}
 }
 async function connect(raw,guest,viaRelay=false){
   let pairing;
-  if(guest){pairing=guest;}else{
+  if(guest){pairing=guest;connectedGateway=guest.sessionId;}else{
   const url=new URL(raw);if(url.protocol!=='https:'||url.origin!==location.origin)throw new Error('Use a pairing link for this web app');
   const encoded=new URLSearchParams(url.hash.slice(1)).get('pair');if(!encoded||encoded.length>16000)throw new Error('Invalid pairing QR');
   const event=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded.replaceAll('-','+').replaceAll('_','/')),char=>char.charCodeAt(0))));
@@ -48,7 +46,7 @@ async function connect(raw,guest,viaRelay=false){
   connection.guest=Boolean(guest);const exported=await publicKey(local);
   channel=await secureChannel(local,pairing.publicKey,pairing.nonce,body=>sendData(connection,body));
   const assemble=reassemble();let inbound=Promise.resolve();connection.on('data',frame=>{inbound=inbound.then(()=>{const whole=assemble(frame);return whole===null?null:channel.receive(whole);}).then(message=>{if(message===null)return;if(message.type==='job'){void work(message).catch(error);return;}return work(message);}).catch(cause=>{error(cause);connection.close();});});
-  const current=connection;setTimeout(()=>{if(connection===current&&!approved){current.close();connecting=false;retryAfter=Date.now()+15000;if(guest?.relay&&!viaRelay)void connect('',guest,true).catch(error);}},guest&&!viaRelay?8000:30000);connection.on('close',()=>{if(connection!==current)return;approved=false;connecting=false;retryAfter=Date.now()+10000;activity('WAITING FOR GATEWAY');$('account').textContent=harvesting?'Desktop disconnected. Scan a new QR.':'Wallet disabled · looking for a community gateway';void engine?.interruptGenerate();});connection.on('error',error);
+  const current=connection;setTimeout(()=>{if(connection===current&&!approved){current.close();connecting=false;retryAfter=Date.now()+15000;if(guest?.relay&&!viaRelay)void connect('',guest,true).catch(error);}},guest&&!viaRelay?8000:30000);connection.on('close',()=>{if(connection!==current)return;approved=false;connectedGateway=undefined;presence?.changed();connecting=false;retryAfter=Date.now()+10000;activity('WAITING FOR GATEWAY');$('account').textContent=harvesting?'Desktop disconnected. Scan a new QR.':'Wallet disabled · looking for a community gateway';void engine?.interruptGenerate();});connection.on('error',error);
   connection.on('open',()=>{if(connection!==current)return;connection.send({type:'join',nonce:pairing.nonce,publicKey:exported,harvest:$('harvest').checked,name:'Web · '+(navigator.userAgentData?.platform??navigator.platform)});});
   $('account').textContent=guest?'Connecting to a community gateway…':'Connecting securely to your desktop…';$('pair-code').value='';history.replaceState(null,'',location.pathname);
 }
@@ -57,7 +55,8 @@ $('start').onclick=async()=>{try{$('error').textContent='';$('start').disabled=t
   const adapter=await navigator.gpu.requestAdapter();if(!adapter)throw new Error('No WebGPU adapter is available');
   if(!engine){const {CreateMLCEngine}=await import('@mlc-ai/web-llm');engineModel=adapter.features.has('shader-f16')?'Qwen3.5-0.8B-q4f16_1-MLC':'Qwen3.5-0.8B-q4f32_1-MLC';
     engine=await CreateMLCEngine(engineModel,{initProgressCallback:item=>{$('progress').textContent=item.text;$('load').value=item.progress;}},{context_window_size:4096});}
-  enabled=true;$('model').textContent='Qwen3.5 · 0.8B';$('backend').textContent=engineModel;$('start').hidden=true;$('stop').hidden=false;activity(approved?'READY':'FINDING GATEWAY');presence?.publish();presence?.refresh();
+  if(!toolsEnabled){$('progress').textContent='Checking this model’s tool-calling support…';toolsEnabled=await probeBrowserTools(engine);}
+  enabled=true;$('model').textContent='Qwen3.5 · 0.8B';$('backend').textContent=engineModel+(toolsEnabled?' · tool self-test passed':' · text only');$('start').hidden=true;$('stop').hidden=false;activity(approved?'READY':'FINDING GATEWAY');presence?.publish();presence?.refresh();
   $('status').textContent=approved?'Ready to serve requests. Leave this tab open.':'Model ready. Finding a community gateway; no wallet required. Leave this tab open.';await reportState();
  }catch(cause){error(cause);activity('SETUP ERROR');}finally{$('start').disabled=false;}};
 $('stop').onclick=async()=>{enabled=false;$('start').textContent='Resume serving';$('start').hidden=false;$('stop').hidden=true;activity(busy?'FINISHING REQUEST':'PAUSED');await reportState().catch(error);};
@@ -74,10 +73,10 @@ if(location.hash.startsWith('#pair=')){$('wallet-link').hidden=false;void connec
 renderNetwork($('map'),{nodes:[{id:'browser',name:'This browser',kind:'browser'}],edges:[]});
 
 $('harvest').onchange=()=>{if(approved&&!connection?.guest){harvesting=$('harvest').checked;void report({type:'harvest',enabled:harvesting}).catch(error);$('account').textContent=harvesting?'Harvesting to paired desktop account':'Trusted desktop linked · harvesting disabled';}else if($('harvest').checked){$('account').textContent='Scan your desktop QR and approve this device to harvest there.';}};
-presence=new Presence(()=>({kind:'browser',name:'Web browser',busy,model:engineModel??'',ready:enabled&&!document.hidden,connected:approved,transport:connection?.transport??(approved?'webrtc':'none')}),nodes=>{
+presence=new Presence(()=>({kind:'browser',name:'Web browser',busy,model:engineModel??'',ready:enabled&&!document.hidden,connected:approved,gatewayId:approved?connectedGateway:undefined,traffic:{...traffic},transport:connection?.transport??(approved?'webrtc':'none')}),nodes=>{
  visibleNodes=nodes;$('online').textContent=String(nodes.length);$('discovery').textContent=nodes.length>1?'Live public discovery · '+nodes.length+' sessions visible':'Discovering devices via public relays…';
  renderNetwork($('map'),{nodes:nodes.map(node=>({...node,kind:node.kind==='desktop'?'peer':'browser'})),edges:[]});
- if(enabled&&!approved&&!connecting&&!$('harvest').checked&&Date.now()>=retryAfter){const gateway=nodes.find(node=>node.kind==='desktop'&&node.gateway)?.gateway;if(gateway){retryAfter=Date.now()+20000;void connect('',gateway).catch(cause=>{connecting=false;retryAfter=Date.now()+20000;error(cause);});}}
+ if(enabled&&!approved&&!connecting&&!$('harvest').checked&&Date.now()>=retryAfter){const target=nodes.find(node=>node.kind==='desktop'&&node.gateway),gateway=target?{...target.gateway,sessionId:target.id}:null;if(gateway){retryAfter=Date.now()+20000;void connect('',gateway).catch(cause=>{connecting=false;retryAfter=Date.now()+20000;error(cause);});}}
 });
 
-phoneAlive(()=>({nodes:visibleNodes,busy,connected:approved,enabled,model:engine?'Qwen3.5 · 0.8B':''}));
+phoneAlive(()=>({selfId:presence?.id,nodes:visibleNodes,busy,connected:approved,enabled,model:engine?'Qwen3.5 · 0.8B':''}));

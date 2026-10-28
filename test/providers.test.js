@@ -45,7 +45,7 @@ test('donated APIs require per-request consent, stream actual usage, hide keys a
    assert.equal(service.ledger.account(payer).balance,99986);assert.equal(service.ledger.account(service.pubkey).balance,100014,'Donor earns only for serving another account');
    mode='missing-usage';await assert.rejects(service.chat(payer,{...request,privacy:'allow-third-party',model:'donated:test-donor'},()=>{}),/usage/);
    status=service.providers.snapshot()[0];assert.equal(status.state,'cooldown');assert.equal(status.usage.input_tokens,20);assert.equal(status.usage.output_tokens,8);assert.ok(status.usage.uncertain_tokens>0);assert.equal(service.ledger.account(payer).balance,99986);
-   service.providers.configure([config]);mode='limit';await assert.rejects(service.chat(payer,{...request,privacy:'allow-third-party',model:'donated:test-donor'},()=>{}),/429/);assert.equal(service.providers.snapshot()[0].free,0);
+   const uncertainBefore429=status.usage.uncertain_tokens;service.providers.configure([config]);mode='limit';await assert.rejects(service.chat(payer,{...request,privacy:'allow-third-party',model:'donated:test-donor'},()=>{}),/429/);assert.equal(service.providers.snapshot()[0].free,0);assert.equal(service.providers.snapshot()[0].usage.uncertain_tokens,uncertainBefore429);
    assert.equal(service.route({...request,privacy:'allow-third-party'}).source,'mesh','Rate-limited API withdraws; normal routing can use local hardware');
    assert.throws(()=>validateJob({...request,privacy:'mesh-only',allow_third_party:true}),/Conflicting/);
  }finally{await service.close();upstream.closeAllConnections();await new Promise(resolve=>upstream.close(resolve));rmSync(directory,{recursive:true,force:true});}

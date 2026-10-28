@@ -60,3 +60,10 @@ test('OpenAI API streams tool calls and accepts their results through the Ollama
     api.closeAllConnections(); await new Promise(resolve => api.close(resolve)); await service.close(); rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('an initial OpenCode greeting omits unused tools and caps output while preserving all system instructions',()=>{
+ const system='Coding client instructions. '.repeat(820),catalog=Array.from({length:10},(_,i)=>({type:'function',function:{name:'tool_'+i,description:'Detailed tool documentation. '.repeat(180),parameters:{type:'object'}}}));
+ const job=validateJob({model:'llmesh-auto',messages:[{role:'system',content:system},{role:'user',content:'hi'}],tools:catalog,maxTokens:32000});
+ assert.equal(job.messages[0].content,system);assert.equal(job.tools.length,0);assert.equal(job.maxTokens,128);assert.equal(job.adaptation.omittedTools,10);
+ const coding=validateJob({model:'llmesh-auto',messages:[{role:'system',content:system},{role:'user',content:'hi, read README.md'}],tools:catalog,maxTokens:32000});assert.equal(coding.tools.length,10);assert.equal(coding.maxTokens,2048);
+});

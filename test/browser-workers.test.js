@@ -73,3 +73,12 @@ test('a ready browser does not hide a failed native setup and still serves reque
  assert.equal(service.route({model:'llmesh-auto',messages:[{role:'user',content:'hi'}],maxTokens:12}).instanceId,'web-'+device);
  }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
 });
+
+
+test('browser tool capability is opt-in after self-test and forwards validated metered calls',async()=>{
+ const workers=new BrowserWorkers(),id='9'.repeat(64);workers.register(id,'Phone',true);workers.report(id,{type:'state',state:'ready',supportsTools:true});assert.equal(workers.snapshot()[0].supportsTools,false);
+ workers.report(id,{type:'state',state:'ready',supportsTools:true,toolAdapter:'json-schema-v1'});assert.equal(workers.snapshot()[0].supportsTools,true);
+ const job={instanceId:'web-'+id,privacy:'allow-third-party',contextTokens:4096,maxTokens:96,tools:[{type:'function',function:{name:'ping'}}]};
+ workers.on('send',({message})=>{if(message.type!=='job')return;setImmediate(()=>{workers.report(id,{type:'tool_calls',id:message.id,calls:[{index:0,id:'call_test',type:'function',function:{name:'ping',arguments:'{"value":"hello"}'}}]});workers.report(id,{type:'done',id:message.id,promptTokens:12,tokens:10,finishReason:'tool_calls'});});});
+ try{const parts=[];for await(const part of workers.chat(job,new AbortController().signal))parts.push(part);assert.equal(parts[0].calls[0].function.name,'ping');assert.equal(parts[1].finishReason,'tool_calls');}finally{workers.close();}
+});
