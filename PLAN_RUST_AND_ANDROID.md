@@ -5,6 +5,7 @@ This plan is decided; build it as written.
 The goal is to replace the Node.js core with one Rust daemon that runs on Linux servers, sits behind the Windows desktop app, and can be embedded in a native Android app.
 
 It ties into:
+- [PLAN_WEB_AND_ACCOUNTS.md](PLAN_WEB_AND_ACCOUNTS.md): WASM web client, shared Nostr accounts and QR device pairing. Keep pure core crates browser-portable; native OS adapters stay separate.
 - [PLAN_MULTI_GPU_AND_RELEASES.md](PLAN_MULTI_GPU_AND_RELEASES.md): placement, the CLI and packaging.
 - [PLAN_SECURITY_AND_BRAND.md](PLAN_SECURITY_AND_BRAND.md): crypto, PKI, privacy levels and the Sovereign edition.
 

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.llmesh/
+*.log
+.env
+coverage/
+.npm-cache/
+src/ui/assets/
+models/ollama/
+rust/target/
+rust/fuzz/artifacts/
+rust/fuzz/corpus/

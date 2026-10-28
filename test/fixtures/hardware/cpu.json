@@ -1,0 +1,10 @@
+{
+  "platform": "linux",
+  "arch": "x64",
+  "ramGB": 64,
+  "freeRamGB": 48,
+  "cores": 16,
+  "physicalCores": 8,
+  "unifiedMemory": false,
+  "gpus": []
+}

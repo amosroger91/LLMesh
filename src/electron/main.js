@@ -1,0 +1,95 @@
+import { app, BrowserWindow, ipcMain, safeStorage, shell, clipboard } from 'electron';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+import { Service } from '../service.js';
+import { startApi } from '../api.js';
+import { generateSecretKey, signAuth } from '../identity.js';
+import { Wallet, randomBytes, hexlify } from 'ethers';
+import { Payments } from '../payments.js';
+
+let service, api, window, quitting = false;
+const here = dirname(fileURLToPath(import.meta.url));
+if (!app.requestSingleInstanceLock()) app.quit();
+else {
+  app.whenReady().then(async () => {
+  app.setAppUserModelId('net.llmesh.desktop');
+  try {
+    if (!safeStorage.isEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text') throw new Error('OS encrypted storage is required for the desktop identity');
+    const directory = app.getPath('userData'); const keyPath = join(directory, 'identity.enc');
+    if (!existsSync(keyPath)) writeFileSync(keyPath, safeStorage.encryptString(Buffer.from(generateSecretKey()).toString('hex')));
+    const list = name => (process.env[name] ?? '').split(',').filter(Boolean);
+    function encrypted(name, create) {
+      const path = join(directory, name);
+      if (!existsSync(path)) writeFileSync(path, safeStorage.encryptString(create()));
+      return safeStorage.decryptString(readFileSync(path));
+    }
+    const secret = Buffer.from(safeStorage.decryptString(readFileSync(keyPath)), 'hex');
+    const paymentPath = join(directory, 'payments.json');
+    const payments = new Payments(encrypted('wallet.enc', () => Wallet.createRandom().privateKey), existsSync(paymentPath) ? JSON.parse(readFileSync(paymentPath, 'utf8')) : {});
+    await payments.startConnection();
+    service = new Service({ directory, secret, payments, apiKey: encrypted('api-key.enc', () => hexlify(randomBytes(32)).slice(2)),
+      topic: process.env.LLMESH_TOPIC, allowedWorkers: list('LLMESH_WORKERS'), trustedCoordinators: list('LLMESH_COORDINATORS'), network: process.env.LLMESH_NO_MESH !== '1' });
+    api = await startApi(service, { port: Number(process.env.LLMESH_PORT ?? 7337) });
+    await service.initialize();
+    window = new BrowserWindow({ width: 1180, height: 850, minWidth: 850, minHeight: 650, show: process.env.LLMESH_SMOKE !== '1', backgroundColor: '#10151d', icon: join(here, '../../assets/branding/icon.png'),
+      webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } });
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    window.webContents.on('will-navigate', event => event.preventDefault());
+    window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    const emit = (name, value) => { if (!window.isDestroyed()) window.webContents.send(name, value); };
+    service.on('progress', item => emit('progress', item));
+    service.on('route', route => emit('route', route));
+    const handle = (name, fn) => ipcMain.handle(name, (event, ...args) => {
+      if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Invalid sender');
+      return fn(...args);
+    });
+    handle('status', () => service.status());
+    handle('contribution', level => service.configureContribution(level));
+    handle('route-preview', job => service.route(job));
+    handle('copy', name => { const state = service.status(); const value = { endpoint: state.api + '/v1', apiKey: service.apiKey, modelId: 'llmesh-auto', modelName: 'LLMesh Auto', wallet: state.payments.address, pubkey: state.pubkey }[name]; if (value) clipboard.writeText(value); });
+    handle('energy', settings => service.energy.configure(settings));
+    handle('power-scan', () => service.energy.scan());
+    handle('payments-connect', async settings => { if (service.busy || service.activeRequests || service.requests || service.installing) throw new Error('Stop active requests before changing payment networks');
+      const result = await payments.connect(settings); writeFileSync(paymentPath, JSON.stringify(settings)); return result; });
+    handle('payments-refresh', () => payments.refresh());
+    handle('payments-register', () => payments.register(service.pubkey, async () => {
+      const base = new URL(payments.settings.coordinatorApi);
+      if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(base.hostname))) throw new Error('Use an HTTPS coordinator URL or local development address');
+      const url = base.href.replace(/\/$/, '') + '/v1/accounts', body = JSON.stringify({ wallet: payments.wallet.address });
+      const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: signAuth(secret, url, 'POST', body) }, body, signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error('Coordinator grant request failed: ' + await response.text()); return response.json();
+    }));
+    handle('payments-refund', id => { if (!/^0x[0-9a-fA-F]{64}$/.test(id)) throw new Error('Invalid escrow job ID'); return payments.refund({ id }); });
+    handle('runtime', async () => {
+      if (process.platform !== 'win32') { await shell.openExternal('https://ollama.com/download'); return 'Install Ollama, then choose Download & configure.'; }
+      return new Promise((resolve, reject) => {
+        const child = spawn('winget', ['install', '--id', 'Ollama.Ollama', '--exact', '--accept-package-agreements', '--accept-source-agreements', '--silent'], { windowsHide: true, stdio: 'ignore' });
+        child.on('error', () => reject(new Error('winget unavailable. Install Ollama from ollama.com/download.')));
+        child.on('exit', code => code === 0 ? resolve('Ollama installed. Restart LLMesh if it is not yet on PATH.') : reject(new Error(`Ollama installer exited ${code}. See ollama.com/download.`)));
+      });
+    });
+    let controller;
+    handle('chat', async job => {
+      if (controller) throw new Error('A request is already running');
+      controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 180000);
+      try { return await service.chat(service.pubkey, job, text => emit('delta', text), controller.signal); }
+      finally { clearTimeout(timer); controller = null; }
+    });
+    handle('cancel', () => controller?.abort());
+    await window.loadFile(join(here, '../ui/index.html'));
+    if (process.platform === 'win32') service.ollama.installRuntime = () => new Promise((resolve, reject) => {
+      emit('progress', { status: 'Installing the local inference runtime automatically…' });
+      const child = spawn('winget', ['install', '--id', 'Ollama.Ollama', '--exact', '--accept-package-agreements', '--accept-source-agreements', '--silent'], { windowsHide: true, stdio: 'ignore' });
+      child.once('error', reject); child.once('exit', code => code === 0 ? resolve() : reject(new Error(`Runtime installer exited ${code}. Install Ollama and retry automatic setup.`)));
+    });
+    if (process.env.LLMESH_SMOKE !== '1') service.startContributionManagement();
+  } catch (e) { const { dialog } = await import('electron'); dialog.showErrorBox('LLMesh could not start', e.message); app.quit(); }
+  app.on('window-all-closed', () => app.quit());
+  app.on('before-quit', event => {
+    if (quitting || !service) return; event.preventDefault(); quitting = true;
+    api?.closeAllConnections(); api?.close(); service.close().finally(() => app.quit());
+  });
+  });
+}

@@ -1,0 +1,31 @@
+{
+  "platform": "linux",
+  "arch": "x64",
+  "ramGB": 64,
+  "freeRamGB": 48,
+  "cores": 16,
+  "physicalCores": 8,
+  "unifiedMemory": false,
+  "gpus": [
+    {
+      "index": 0,
+      "uuid": "GPU-0",
+      "name": "Test GPU 0",
+      "vendor": "NVIDIA",
+      "backend": "cuda",
+      "vramGB": 24,
+      "freeGB": 24,
+      "integrated": false
+    },
+    {
+      "index": 1,
+      "uuid": "GPU-1",
+      "name": "Test GPU 1",
+      "vendor": "NVIDIA",
+      "backend": "cuda",
+      "vramGB": 8,
+      "freeGB": 8,
+      "integrated": false
+    }
+  ]
+}

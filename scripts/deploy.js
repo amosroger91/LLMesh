@@ -1,0 +1,14 @@
+import { JsonRpcProvider, Wallet, ContractFactory } from 'ethers';
+import { compile } from './compile-contracts.js';
+const url = process.env.LLMESH_RPC ?? 'http://127.0.0.1:8545';
+const provider = new JsonRpcProvider(url, undefined, { cacheTimeout: 0 }), network = await provider.getNetwork();
+if (![31337n, 84532n, 8453n].includes(network.chainId)) throw new Error('Expected local development, Base Sepolia, or Base');
+if (network.chainId !== 31337n && process.env.LLMESH_CONFIRM_DEPLOY !== 'yes') throw new Error('Live deployment spends gas. Set LLMESH_CONFIRM_DEPLOY=yes after reviewing contracts.');
+if (!process.env.LLMESH_DEPLOYER_KEY) throw new Error('Set LLMESH_DEPLOYER_KEY. Never commit it.');
+const signer = new Wallet(process.env.LLMESH_DEPLOYER_KEY, provider);
+const issuer = process.env.LLMESH_ISSUER ?? signer.address;
+const contracts = compile();
+const token = await new ContractFactory(contracts.LLMeshToken.abi, '0x' + contracts.LLMeshToken.evm.bytecode.object, signer).deploy(issuer); await token.waitForDeployment();
+const escrow = await new ContractFactory(contracts.LLMeshEscrow.abi, '0x' + contracts.LLMeshEscrow.evm.bytecode.object, signer).deploy(await token.getAddress(), issuer); await escrow.waitForDeployment();
+console.log(JSON.stringify({ rpc: url, chainId: Number(network.chainId), token: await token.getAddress(), escrow: await escrow.getAddress(), issuer }, null, 2));
+provider.destroy();

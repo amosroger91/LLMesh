@@ -1,0 +1,12 @@
+import { copyModel, defaultCache } from '../src/model-bundle.js';
+import { mkdir, copyFile, writeFile, readFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+const model = process.argv[2] ?? 'qwen3.5:0.8b', target = resolve('models/ollama');
+if (!await copyModel(model, defaultCache(), target, item => console.log(item.status))) throw new Error(`Download ${model} into Ollama once before creating the offline bundle`);
+await mkdir(target, { recursive: true });
+const [name, tag] = model.split(':');
+const manifest = JSON.parse(await readFile(join(target, 'manifests', 'registry.ollama.ai', 'library', name, tag), 'utf8'));
+const license = manifest.layers.find(layer => layer.mediaType === 'application/vnd.ollama.image.license');
+if (!license) throw new Error('Model has no redistribution license layer');
+await copyFile(join(target, 'blobs', license.digest.replace(':', '-')), join(target, 'LICENSE-Qwen.txt'));
+await writeFile(join(target, 'README.txt'), `LLMesh offline model: ${model}\nExported from the local Ollama cache. Exact blob digests are pinned in the bundled manifest.\nThis is the cached llama.cpp Q8_0 build, including its draft model and projector.\nRedistribution license: LICENSE-Qwen.txt (also retained as a manifest layer).\n`);

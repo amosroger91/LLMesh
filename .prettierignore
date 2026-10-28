@@ -1,0 +1,7 @@
+node_modules
+dist
+.llmesh
+.npm-cache
+models/ollama
+src/ui/assets
+src/contracts

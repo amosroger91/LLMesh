@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["crates/llmesh-proto", "crates/llmesh-hw", "crates/llmesh", "crates/llmesh-web"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+repository = "https://github.com/amosroger91/LLMesh"
+
+[workspace.dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.154", features = ["preserve_order", "float_roundtrip"] }
+wasm-bindgen = "=0.2.129"
+llmesh-proto = { path = "crates/llmesh-proto" }
+llmesh-hw = { path = "crates/llmesh-hw" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
