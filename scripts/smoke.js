@@ -53,14 +53,17 @@ app.on('browser-window-created', (_event, window) => {
       // Exercise the actual renderer/preload chat path with deterministic streamed output.
       const chats = [];
       ipcMain.removeHandler('chat');
-      ipcMain.handle('chat', async (_event, job) => {
+      ipcMain.removeHandler('companion-chat');
+      const mockChat=async (_event, job) => {
         chats.push(job); assert.equal(job.model, 'llmesh-auto');
         window.webContents.send('route', { reason: 'Smoke route: local mesh worker' });
         window.webContents.send('delta', 'Mesh ');
         window.webContents.send('delta', 'response');
         await new Promise(resolve => setTimeout(resolve, 30));
         return { model: 'qwen3.5:0.8b', worker: 'smoke-worker', credits: 1, route: { settlement: 'local-self' } };
-      });
+      };
+      ipcMain.handle('chat',mockChat);
+      ipcMain.handle('companion-chat',(event,job)=>{assert.equal(job.hardwareOnly,true);return mockChat(event,job);});
       await window.webContents.executeJavaScript(`(async () => {
         if (document.getElementById('online').textContent !== '1') throw new Error('Local node missing from online count');
         if (document.getElementById('prompt')) throw new Error('Endpoint test still requires a custom prompt');

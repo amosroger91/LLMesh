@@ -1,3 +1,4 @@
+import {nodeProfile} from '../shared/node-profile.js';
 import Hyperswarm from 'hyperswarm';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
@@ -97,6 +98,7 @@ export class Mesh extends EventEmitter {
       if (!Array.isArray(info.models) || info.models.length > 20 || !info.models.every(model => typeof model === 'string' && model.length < 100) || ![0, 1].includes(info.busy)) throw new Error('Bad capabilities');
       if(info.slots!=null&&(!Array.isArray(info.slots)||info.slots.length>64||!info.slots.every(slot=>typeof slot.id==='string'&&slot.id.length<=100&&typeof slot.model==='string'&&Number.isInteger(slot.total)&&slot.total>=1&&slot.total<=4&&Number.isInteger(slot.free)&&slot.free>=0&&slot.free<=slot.total)))throw new Error('Invalid runtime slots');
       if(info.devices!=null&&(!Array.isArray(info.devices)||info.devices.length>16||!info.devices.every(device=>/^web-[a-f0-9]{64}$/.test(device.id)&&typeof device.name==='string'&&device.name.length<=60&&typeof device.model==='string'&&device.model.length<=100&&typeof device.busy==='boolean')))throw new Error('Invalid linked devices');
+      for(const device of info.devices??[])if(device.profile)device.profile=nodeProfile(device.profile);
       peer.devices=info.devices??[];
       for(const slot of info.slots??[]){
         if(slot.source!=null&&!['third-party','community'].includes(slot.source))throw new Error('Invalid worker source');
@@ -107,6 +109,7 @@ export class Mesh extends EventEmitter {
           if(!model||model.id!==slot.model||!/^donated:[a-z0-9-]{1,80}$/.test(model.id)||!Number.isInteger(model.rank)||model.rank<1||model.rank>5||!Number.isFinite(model.parametersB)||model.parametersB<=0||model.parametersB>10000||typeof model.provider!=='string'||model.provider.length>40||typeof model.upstreamModel!=='string'||model.upstreamModel.length>200||!Number.isSafeInteger(slot.creditBudget)||slot.creditBudget<0||slot.creditBudget>10000000)throw new Error('Invalid donated API capability');
         }else if(slot.model.startsWith('donated:'))throw new Error('Unclassified third-party capability');
       }
+      peer.profile=info.profile?nodeProfile(info.profile):undefined;
       peer.slots=info.slots;
       Object.assign(peer, { models: info.models, busy: info.busy, seen: Date.now() });
       peer.wallet = typeof info.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(info.wallet) ? info.wallet : null;
@@ -180,7 +183,7 @@ export class Mesh extends EventEmitter {
     return [...this.byIdentity.values()].filter(peer=>this.allowedWorkers.includes(peer.pubkey)).flatMap(peer=>{
       const base={devices:peer.devices,pubkey:peer.pubkey,models:peer.models,busy:Math.max(peer.busy,peer.inFlight),seen:peer.seen,latencyMs:peer.latencyMs,
         firstTokenMs:peer.firstTokenMs,tokensPerSecond:peer.tokensPerSecond,hardware:peer.hardware,loadedModel:peer.loadedModel,metrics:peer.metrics,
-        supportsTools:peer.supportsTools,contribution:peer.contribution,wallet:peer.wallet,chainId:peer.chainId,escrow:peer.escrow};
+        profile:peer.profile,supportsTools:peer.supportsTools,contribution:peer.contribution,wallet:peer.wallet,chainId:peer.chainId,escrow:peer.escrow};
       if(!peer.slots)return [base];
       return peer.slots.map(slot=>({...base,instanceId:slot.id,models:[slot.model],total:slot.total,
           requestTokenLimit:slot.requestTokenLimit,maxContextTokens:slot.maxContextTokens,source:slot.source,creditBudget:slot.creditBudget,modelCatalog:slot.source==='third-party'?[slot.modelInfo]:[],supportsTools:slot.supportsTools,free:Math.max(0,slot.free-(peer.instanceInFlight?.get(slot.id)??0)),busy:slot.free>(peer.instanceInFlight?.get(slot.id)??0)?0:1,

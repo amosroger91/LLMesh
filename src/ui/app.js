@@ -102,12 +102,12 @@ document.querySelectorAll('[data-level]').forEach(button => { button.onclick = a
   try { await api.contribution(button.dataset.level); await refresh(); } catch (e) { error(e); }
 }; });
 bind('retry-setup', () => task('retry-setup', async () => { await api.contribution(state.pendingContribution ?? state.contributionLevel); await refresh(); }));
-async function runInference(job, target, privacy=$('privacy-mode').value) {
+async function runInference(job, target, privacy=$('privacy-mode').value,companion=false) {
   if (inferenceActive) throw new Error('A request is already running');
   inferenceActive = true; $('send').disabled = $('companion-send').disabled = true;
   outputNode = document.createTextNode(''); target.append(outputNode);
   try {
-    const receipt = await api.chat({...job,privacy});
+    const receipt = await (companion?api.companionChat:api.chat)({...job,privacy,...(companion?{hardwareOnly:true}:{})});
     const detail = `Completed using ${receipt.model} on ${receipt.worker === state.pubkey ? 'your node' : short(receipt.worker)} · ${receipt.credits} credits (${receipt.promptTokens ?? 0} input + ${receipt.outputTokens ?? 0} output tokens) · ${receipt.route.settlement === 'local-self' ? 'spent and earned back' : receipt.transaction ?? (receipt.settlement === 'settle-pending' ? 'settlement pending' : 'settled')}`;
     for (const id of ['route-status', 'companion-route']) $(id).textContent = detail + (receipt.route.degraded ? ' · Below recommended tier' : '');
     return { receipt, text: outputNode.textContent };
@@ -151,7 +151,7 @@ bind('companion-send', async () => {
   const row = document.createElement('div'); row.className = 'chat-message';
   const user = document.createElement('small'); user.textContent = prompt; row.append(user); $('companion-history').append(row);
   try {
-    const result = await runInference({ model: 'llmesh-auto', messages, maxTokens: 512 }, row);
+    const result = await runInference({ model: 'llmesh-auto', messages, maxTokens: 512 }, row,undefined,true);
     companionHistory = [...messages, { role: 'assistant', content: result.text }].slice(-30);
     await store.set('companion-history', companionHistory); $('companion-prompt').value = '';
   } catch (e) { const note = document.createElement('small'); note.textContent = 'Request stopped: ' + e.message; row.append(note); throw e; }

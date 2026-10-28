@@ -1,3 +1,4 @@
+import {nodeProfile} from '../shared/node-profile.js';
 import {EventEmitter} from 'node:events';
 import {randomUUID} from 'node:crypto';
 import {usageCredits} from './pricing.js';
@@ -9,7 +10,7 @@ export class BrowserWorkers extends EventEmitter {
   report(id,event){const device=this.devices.get(id);if(!device)throw new Error('Device is not approved');device.lastSeen=Date.now();
     if(event.type==='heartbeat')return;
     if(event.type==='harvest'){if(device.community||typeof event.enabled!=='boolean')throw new Error('Pair a trusted desktop before changing harvesting');device.harvest=event.enabled;return;}
-    if(event.type==='state'){if(!['paired','loading','ready','paused','error'].includes(event.state))throw new Error('Invalid browser state');device.state=event.state;device.supportsTools=event.supportsTools===true&&event.toolAdapter==='json-schema-v1';device.engineModel=String(event.engineModel??'').slice(0,100);return;}
+    if(event.type==='state'){if(!['paired','loading','ready','paused','error'].includes(event.state))throw new Error('Invalid browser state');if(event.profile){device.profile=nodeProfile(event.profile);device.name=device.profile.name;}device.state=event.state;device.supportsTools=event.supportsTools===true&&event.toolAdapter==='json-schema-v1';device.engineModel=String(event.engineModel??'').slice(0,100);return;}
     const task=this.tasks.get(event.id);if(!task)return;if(task.deviceId!==id)throw new Error('Wrong browser request owner');
     if(event.type==='delta'){if(typeof event.text!=='string'||(task.bytes+=Buffer.byteLength(event.text))>262144)throw new Error('Browser response too large');task.queue.push({type:'delta',text:event.text});}
     else if(event.type==='tool_calls'){if(!device.supportsTools||!Array.isArray(event.calls)||!event.calls.length||event.calls.length>8)throw new Error('Invalid browser tool calls');const names=new Set((task.job.tools??[]).map(tool=>tool.function.name));for(const call of event.calls){if(!names.has(call.function?.name)||typeof call.function.arguments!=='string'||!call.id||call.id.length>200)throw new Error('Invalid browser tool call');const args=JSON.parse(call.function.arguments);if(!args||typeof args!=='object'||Array.isArray(args))throw new Error('Invalid browser tool arguments');}if((task.bytes+=Buffer.byteLength(JSON.stringify(event.calls)))>262144)throw new Error('Browser response too large');task.queue.push({type:'tool_calls',calls:event.calls});}

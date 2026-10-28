@@ -1,3 +1,4 @@
+import {nodeProfile} from '../shared/node-profile.js';
 import {ProviderPool} from './providers.js';
 import { BrowserWorkers } from './browser-workers.js';
 import { mkdirSync } from 'node:fs';
@@ -47,13 +48,14 @@ export class Service extends EventEmitter {
     this.ledger.register(this.pubkey);
     this.ledger.db.exec('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY,value TEXT NOT NULL)');
     this.placementOptions={...JSON.parse(this.ledger.db.prepare("SELECT value FROM preferences WHERE key='placement'").get()?.value??'{}'),...placement};
+    this.nodeProfile=nodeProfile(JSON.parse(this.ledger.db.prepare("SELECT value FROM preferences WHERE key='node_profile'").get()?.value??'{}'),'Desktop node');
     const savedPrivacy=this.ledger.db.prepare("SELECT value FROM preferences WHERE key='inference_privacy'").get()?.value;
     this.inferencePrivacy=['mesh-only','allow-third-party'].includes(savedPrivacy)?savedPrivacy:'mesh-only';
     this.contributionLevel = this.ledger.db.prepare("SELECT value FROM preferences WHERE key='contribution'").get()?.value ?? 'medium';
     if (!CONTRIBUTION[this.contributionLevel]) this.contributionLevel = 'medium';
     this.setup = { state: 'waiting', message: 'Automatic hardware setup will start shortly.' };
     if (network) this.mesh = new Mesh({ secret, topic, allowedWorkers, trustedCoordinators,
-      describe: () => ({ models: this.servingModels(), busy: Number(this.draining || !this.localSlots().some(slot=>slot.free>0)), slots: this.localSlots(), devices: this.browserWorkers.snapshot().map(device=>({id:device.id,name:device.name,model:device.engineModel||device.model,busy:Boolean(device.busy)})),
+      describe: () => ({ profile:this.nodeProfile, models: this.servingModels(), busy: Number(this.draining || !this.localSlots().some(slot=>slot.free>0)), slots: this.localSlots(), devices: this.browserWorkers.snapshot().map(device=>({id:device.id,name:device.name,profile:device.profile,model:device.engineModel||device.model,ready:device.state==='ready',busy:Boolean(device.busy)})),
         contribution: this.profile?.level ?? this.contributionLevel,
         loadedModel: this.loadedModel, hardware: this.hardwareSummary(),
         wallet: this.payments?.wallet.address, chainId: this.payments?.state.chainId, escrow: this.payments?.settings.escrow }),
@@ -83,6 +85,7 @@ export class Service extends EventEmitter {
     await this.payments.verify(job.payment.id, job.payer, this.payments.wallet.address, pricing.priceUnits);
     try { this.ledger.db.prepare('INSERT INTO worker_payments(id) VALUES (?)').run(job.payment.id); } catch { throw new Error('Worker rejected reused payment'); }
   }
+  configureNodeProfile(value){this.nodeProfile=nodeProfile(value,'Desktop node');this.ledger.db.prepare("INSERT OR REPLACE INTO preferences VALUES ('node_profile', ?)").run(JSON.stringify(this.nodeProfile));return this.nodeProfile;}
   configurePrivacy(value){
     if(!['mesh-only','allow-third-party'].includes(value))throw new Error('Invalid inference privacy mode');
     this.ledger.db.prepare("INSERT OR REPLACE INTO preferences VALUES ('inference_privacy', ?)").run(value);this.inferencePrivacy=value;return {inferencePrivacy:value};
@@ -174,16 +177,16 @@ export class Service extends EventEmitter {
     this.ready = (await this.ollama.installed().catch(() => [])).filter(id => catalog.models.some(m => m.id === id));
   }
   topology() {
-    const nodes=[{id:this.pubkey,name:'Your desktop',kind:'desktop',busy:Boolean(this.busy),model:this.currentModel??this.assignedModel}],edges=[];
+    const nodes=[{id:this.pubkey,name:this.nodeProfile.name,profile:this.nodeProfile,kind:'desktop',connected:true,ready:!this.draining&&(this.nativeModels().length>0||this.providers.snapshot().some(provider=>provider.state==='ready')),busy:Boolean(this.busy),model:this.currentModel??this.assignedModel}],edges=[];
     const add=(node,parent)=>{if(nodes.length>=200||nodes.some(item=>item.id===node.id))return;nodes.push(node);edges.push({from:parent,to:node.id});};
-    for(const worker of this.mesh?.workers()??[]){add({id:worker.pubkey,name:worker.pubkey.slice(0,10),kind:'peer',busy:Boolean(worker.busy),model:worker.models[0]},this.pubkey);
+    for(const worker of this.mesh?.workers()??[]){add({id:worker.pubkey,name:worker.profile?.name??worker.pubkey.slice(0,10),profile:worker.profile,kind:'peer',connected:true,ready:worker.models.length>0,busy:Boolean(worker.busy),model:worker.models[0]},this.pubkey);
       for(const device of worker.devices??[])add({...device,kind:'browser'},worker.pubkey);}
-    for(const device of this.browserWorkers.snapshot())add({id:device.id,name:device.name,kind:'browser',busy:Boolean(device.busy),model:device.engineModel||device.state},this.pubkey);
-    for(const provider of this.providers.snapshot())if(provider.state==='ready')add({id:provider.id,name:provider.provider+' API',kind:'provider',busy:Boolean(provider.busy),model:provider.upstreamModel},this.pubkey);
+    for(const device of this.browserWorkers.snapshot())add({id:device.id,name:device.name,profile:device.profile,kind:'browser',connected:true,ready:device.state==='ready',busy:Boolean(device.busy),model:device.engineModel||device.state},this.pubkey);
+    for(const provider of this.providers.snapshot())if(provider.state==='ready')add({id:provider.id,name:provider.provider+' API',kind:'provider',state:provider.state,busy:Boolean(provider.busy),model:provider.upstreamModel},this.pubkey);
     return {nodes,edges,scope:'Known trusted peers and linked browser devices'};
   }
   status() {
-    return { inferencePrivacy:this.inferencePrivacy, draining: Boolean(this.draining), donations: this.providers.snapshot(), browserDevices: this.browserWorkers.snapshot(), topology: this.topology(), instances: this.pool ? this.ollama.snapshot() : this.nativeSlots(), placement: this.profile?.placement ?? this.proposedProfile?.placement, placementOptions:this.placementOptions, pubkey: this.pubkey, hardware: this.hardware, recommendation: this.recommendation, models: [...catalog.models,...this.providers.snapshot().map(provider=>provider.modelInfo)],
+    return { nodeProfile:this.nodeProfile,inferencePrivacy:this.inferencePrivacy, draining: Boolean(this.draining), donations: this.providers.snapshot(), browserDevices: this.browserWorkers.snapshot(), topology: this.topology(), instances: this.pool ? this.ollama.snapshot() : this.nativeSlots(), placement: this.profile?.placement ?? this.proposedProfile?.placement, placementOptions:this.placementOptions, pubkey: this.pubkey, hardware: this.hardware, recommendation: this.recommendation, models: [...catalog.models,...this.providers.snapshot().map(provider=>provider.modelInfo)],
       installed: this.ready, serving: this.servingModels(), assignedModel: this.assignedModel, contribution: this.profile ?? this.proposedProfile,
       contributionLevel: this.contributionLevel, pendingContribution: this.pendingContribution, setup: this.setup,
       currentModel: this.currentModel, lastRoute: this.lastRoute, installing: this.installing, busy: this.busy, workers: this.mesh?.workers() ?? [],
@@ -201,6 +204,7 @@ export class Service extends EventEmitter {
   async *runLocal(input, signal) {
     const job = validateJob(input);
     const browser = job.instanceId?.startsWith('web-'),donated=job.instanceId?.startsWith('api-'),auxiliary=browser||donated;
+    if(donated&&job.hardwareOnly)throw new Error('Hardware-only requests cannot use donated APIs');
     if(donated&&job.privacy!=='allow-third-party')throw new Error('Requester did not allow third-party APIs');
     if ((!auxiliary && !this.pool && this.localEnergyJobs) || this.draining || (!auxiliary && this.installing) || !this.servingModels().includes(job.model)) throw new Error('Local worker unavailable');
     this.busy++;

@@ -66,3 +66,17 @@ test('HTTP 413 learns provider limits, keeps small jobs available, and safely re
  await service.close();service=new Service({directory,secret,network:false,ollama:{close(){}}});service.providers.configure([config]);assert.equal(service.providers.snapshot()[0].requestTokenLimit,1000,'Learned limit survives restart');
  }finally{await service.close();upstream.closeAllConnections();await new Promise(resolve=>upstream.close(resolve));rmSync(directory,{recursive:true,force:true});}
 });
+
+test('companion hardware-only policy excludes donated APIs even with saved external consent and refuses direct dispatch',async()=>{
+ const directory=mkdtempSync(join(tmpdir(),'llmesh-hardware-only-'));const service=new Service({directory,secret:generateSecretKey(),network:false,ollama:{close(){},async *chat(){yield{type:'delta',text:'hardware answer'};yield{type:'done',promptTokens:2,tokens:2};}}});
+ const job={model:'llmesh-auto',messages:[{role:'user',content:'hello'}],maxTokens:12};
+ try{service.configurePrivacy('allow-third-party');service.providers.configure([{id:'fast-api',kind:'custom',baseUrl:'http://127.0.0.1:1/v1',apiKey:'unused-key',model:'fast-70b',dailyLimit:100000,freeTierConfirmed:true}]);service.ready=['qwen3.5:0.8b'];service.modelMetrics['qwen3.5:0.8b']={firstTokenMs:2000,tokensPerSecond:10};
+ assert.equal(service.route(job).source,'third-party');assert.equal(service.route({...job,hardware_only:true}).source,'mesh');
+ const receipt=await service.chat(service.pubkey,{...job,hardwareOnly:true},()=>{});assert.equal(receipt.route.hardwareOnly,true);assert.equal(receipt.route.source,'mesh');assert.equal(service.ledger.account(service.pubkey).balance,100000);
+ service.ready=[];assert.throws(()=>service.route({...job,hardwareOnly:true}),/cannot use donated APIs/);
+ await assert.rejects(async()=>{for await(const _part of service.runLocal({...job,model:'donated:fast-api',instanceId:'api-fast-api',privacy:'allow-third-party',hardwareOnly:true},AbortSignal.timeout(1000))){/* consume */}},/Hardware-only/);
+ await assert.rejects(async()=>{for await(const _part of service.providers.chat({...job,model:'donated:fast-api',instanceId:'api-fast-api',privacy:'allow-third-party',hardwareOnly:true},AbortSignal.timeout(1000))){/* consume */}},/Hardware-only/);
+ const id='8'.repeat(64);service.browserWorkers.register(id,'Phone',true);service.browserWorkers.report(id,{type:'state',state:'ready'});assert.equal(service.route({...job,hardwareOnly:true}).instanceId,'web-'+id);
+ assert.equal(service.providers.snapshot()[0].usage.requests,0);
+ }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
+});

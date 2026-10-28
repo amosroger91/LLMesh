@@ -45,6 +45,7 @@ export function planRoute(job, workers, now = Date.now()) {
   let options = [];const excluded=new Set();
   const models = [...new Map([...catalog.models,...workers.flatMap(worker=>worker.modelCatalog??[])].map(model=>[model.id,model])).values()];
   for (const worker of workers) {
+    if(job.hardwareOnly&&worker.source==='third-party'){excluded.add('AI Companion / hardware-only requests cannot use donated APIs');continue;}
     if(['third-party','community'].includes(worker.source)&&job.privacy!=='allow-third-party'){excluded.add('external workers excluded by your privacy setting');continue;}
     if(job.tools?.length&&worker.supportsTools===false){excluded.add('available browser workers do not support tool calls; a native or tool-capable API worker is required');continue;}
     if(worker.busy!==0&&worker.unavailableReason)excluded.add(worker.unavailableReason);
@@ -80,7 +81,7 @@ export function planRoute(job, workers, now = Date.now()) {
   }
   options.sort((a, b) => a.estimate.routingScore - b.estimate.routingScore || a.pricing.priceUnits - b.pricing.priceUnits || a.model.rank - b.model.rank || a.worker.pubkey.localeCompare(b.worker.pubkey));
   const best = options[0]; degraded ||= best.model.rank < complexity.minimumRank;
-  return { source: best.worker.source??'mesh', privacy:job.privacy??'mesh-only', provider:best.model.provider, upstreamModel:best.model.upstreamModel, model: best.model.id, worker: best.worker.pubkey, instanceId:best.worker.instanceId, wallet: best.worker.wallet, contribution: best.worker.contribution ?? 'low', priceUnits: best.pricing.priceUnits, pricing: best.pricing, complexity, automatic, degraded,
+  return { hardwareOnly:Boolean(job.hardwareOnly),source: best.worker.source??'mesh', privacy:job.privacy??'mesh-only', provider:best.model.provider, upstreamModel:best.model.upstreamModel, model: best.model.id, worker: best.worker.pubkey, instanceId:best.worker.instanceId, wallet: best.worker.wallet, contribution: best.worker.contribution ?? 'low', priceUnits: best.pricing.priceUnits, pricing: best.pricing, complexity, automatic, degraded,
     estimate: best.estimate, eligibleOptions: options.length,
     reason: `${complexity.level} request → ${best.model.id} on ${best.worker.local ? 'your node' : best.worker.pubkey.slice(0, 12) + '…'}; ${Math.round(best.estimate.firstTokenMs)} ms estimated first token (${best.estimate.basis}).` +
       (job.adaptation?.omittedTools?' Standalone greeting: unused coding tools omitted; system instructions preserved.':'')+

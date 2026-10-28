@@ -23,6 +23,9 @@ export function validateJob(job) {
   if(job.privacy!=null&&!['mesh-only','allow-third-party'].includes(job.privacy))throw new Error('privacy must be mesh-only or allow-third-party');
   if(job.allow_third_party!=null&&typeof job.allow_third_party!=='boolean')throw new Error('allow_third_party must be boolean');
   if(job.privacy==='mesh-only'&&job.allow_third_party===true||job.privacy==='allow-third-party'&&job.allow_third_party===false)throw new Error('Conflicting privacy options');
+  if(job.hardwareOnly!=null&&typeof job.hardwareOnly!=='boolean'||job.hardware_only!=null&&typeof job.hardware_only!=='boolean')throw new Error('hardware_only must be boolean');
+  if(job.hardwareOnly!=null&&job.hardware_only!=null&&job.hardwareOnly!==job.hardware_only)throw new Error('Conflicting hardware-only options');
+  const hardwareOnly=job.hardwareOnly??job.hardware_only??false;
   const privacy=job.privacy??(job.allow_third_party===true?'allow-third-party':'mesh-only');
   const messages = job.messages.map(message => {
     if (!message || !['system', 'developer', 'user', 'assistant', 'tool'].includes(message.role)) throw new Error('Unsupported chat message role');
@@ -55,7 +58,7 @@ export function validateJob(job) {
   const maxTokens = Math.min(limit, greeting?128:MAX_OUTPUT_TOKENS);
   if (job.complexity != null && !['auto', 'simple', 'standard', 'complex'].includes(job.complexity)) throw new Error('Invalid complexity level');
   if (job.allow_degraded != null && typeof job.allow_degraded !== 'boolean') throw new Error('allow_degraded must be boolean');
-  return { model: job.model, privacy, messages, tools: tools.map(tool => ({ type: 'function', function: { ...tool.function } })),
+  return { model: job.model, privacy, hardwareOnly, messages, tools: tools.map(tool => ({ type: 'function', function: { ...tool.function } })),
     tool_choice:greeting?'none':job.tool_choice??'auto', maxTokens, requestedMaxTokens,
     adaptation:greeting?{kind:'standalone-greeting',omittedTools,outputLimit:maxTokens}:undefined,
     contextTokens: Math.min(32768, Math.max(4096, Math.ceil((inputCharacters / 3 + maxTokens + 512) / 1024) * 1024)),

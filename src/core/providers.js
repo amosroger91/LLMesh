@@ -45,6 +45,7 @@ export class ProviderPool {
       slots:1,free:provider.enabled&&!provider.busy&&provider.cooldown<=Date.now()&&remaining>=4096?1:0,requestTokenLimit:this.requestLimit(provider),remainingCredits:remaining,dailyLimit:provider.dailyLimit,usage,calls:this.db.prepare('SELECT configured_model,reported_model,input_tokens,output_tokens,created FROM provider_calls WHERE provider=? ORDER BY created DESC LIMIT 10').all(provider.id),metrics:provider.metrics,error:provider.error??null};});}
   requestLimit(provider){const value=Math.min(provider.maxRequestTokens??Infinity,this.db.prepare('SELECT request_tokens FROM provider_limits WHERE provider=?').get(provider.id)?.request_tokens??Infinity);return Number.isFinite(value)?value:undefined;}
   async *chat(job,signal){
+    if(job.hardwareOnly)throw new Error('Hardware-only requests cannot use donated APIs');
     if(job.privacy!=='allow-third-party')throw new Error('Third-party inference was not authorized by the requester');
     const provider=this.providers.get(job.instanceId?.slice(4));if(!provider||'donated:'+provider.id!==job.model)throw new Error('Unknown donated model');
     const reserve=job.contextTokens+job.maxTokens,slot=this.snapshot().find(slot=>slot.id===job.instanceId);

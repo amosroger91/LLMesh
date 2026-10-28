@@ -1,3 +1,6 @@
+import {servingTopology} from '../browser/serving-topology.js';
+import {nodeProfile as validateProfile} from '../shared/node-profile.js';
+import {profileEditor} from '../browser/profile-editor.js';
 import {browserInference,probeBrowserTools} from '../browser/tool-inference.js';
 import {phoneAlive} from './phone-alive.js';
 import {RelayPeer} from '../browser/relay-peer.js';
@@ -8,11 +11,12 @@ import jsQR from 'jsqr';
 import {ephemeralKey,publicKey,secureChannel,sendData,reassemble} from '../browser/secure-channel.js';
 import {renderNetwork} from '../browser/network-map.js';
 const $=id=>document.getElementById(id);
+let nodeProfile;try{nodeProfile=validateProfile(JSON.parse(localStorage.getItem('llmesh.node-profile')??'{}'));}catch{nodeProfile=validateProfile();}
 let engine,engineModel,toolsEnabled=false,peer,connection,channel,approved=false,busy=false,enabled=false,camera,activeJob,harvesting=false,connecting=false,retryAfter=0,presence,relay,visibleNodes=[],connectedGateway;const traffic={requests:0,responses:0};
 const error=error=>{$('error').textContent=error.message??String(error);};
 const activity=value=>{$('activity').textContent=value;};
 async function report(message){if(approved&&connection?.open){await channel.send(message);if(['delta','tool_calls','done','error'].includes(message.type)){traffic.responses++;presence?.changed();}}}
-async function reportState(){await report({type:'state',state:engine?(enabled&&!document.hidden?'ready':'paused'):'paired',engineModel,supportsTools:toolsEnabled,toolAdapter:'json-schema-v1'});}
+async function reportState(){await report({type:'state',state:engine?(enabled&&!document.hidden?'ready':'paused'):'paired',engineModel,profile:nodeProfile,supportsTools:toolsEnabled,toolAdapter:'json-schema-v1'});}
 async function work(message){
   if(message.type==='cancel'){if(activeJob===message.id)await engine?.interruptGenerate();return;}
   if(message.type==='pending'){$('account').textContent='Waiting for approval on your desktop…';return;}
@@ -47,7 +51,7 @@ async function connect(raw,guest,viaRelay=false){
   channel=await secureChannel(local,pairing.publicKey,pairing.nonce,body=>sendData(connection,body));
   const assemble=reassemble();let inbound=Promise.resolve();connection.on('data',frame=>{inbound=inbound.then(()=>{const whole=assemble(frame);return whole===null?null:channel.receive(whole);}).then(message=>{if(message===null)return;if(message.type==='job'){void work(message).catch(error);return;}return work(message);}).catch(cause=>{error(cause);connection.close();});});
   const current=connection;setTimeout(()=>{if(connection===current&&!approved){current.close();connecting=false;retryAfter=Date.now()+15000;if(guest?.relay&&!viaRelay)void connect('',guest,true).catch(error);}},guest&&!viaRelay?8000:30000);connection.on('close',()=>{if(connection!==current)return;approved=false;connectedGateway=undefined;presence?.changed();connecting=false;retryAfter=Date.now()+10000;activity('WAITING FOR GATEWAY');$('account').textContent=harvesting?'Desktop disconnected. Scan a new QR.':'Wallet disabled · looking for a community gateway';void engine?.interruptGenerate();});connection.on('error',error);
-  connection.on('open',()=>{if(connection!==current)return;connection.send({type:'join',nonce:pairing.nonce,publicKey:exported,harvest:$('harvest').checked,name:'Web · '+(navigator.userAgentData?.platform??navigator.platform)});});
+  connection.on('open',()=>{if(connection!==current)return;connection.send({type:'join',nonce:pairing.nonce,publicKey:exported,harvest:$('harvest').checked,name:nodeProfile.name});});
   $('account').textContent=guest?'Connecting to a community gateway…':'Connecting securely to your desktop…';$('pair-code').value='';history.replaceState(null,'',location.pathname);
 }
 $('start').onclick=async()=>{try{$('error').textContent='';$('start').disabled=true;activity('LOADING');
@@ -59,24 +63,26 @@ $('start').onclick=async()=>{try{$('error').textContent='';$('start').disabled=t
   enabled=true;$('model').textContent='Qwen3.5 · 0.8B';$('backend').textContent=engineModel+(toolsEnabled?' · tool self-test passed':' · text only');$('start').hidden=true;$('stop').hidden=false;activity(approved?'READY':'FINDING GATEWAY');presence?.publish();presence?.refresh();
   $('status').textContent=approved?'Ready to serve requests. Leave this tab open.':'Model ready. Finding a community gateway; no wallet required. Leave this tab open.';await reportState();
  }catch(cause){error(cause);activity('SETUP ERROR');}finally{$('start').disabled=false;}};
-$('stop').onclick=async()=>{enabled=false;$('start').textContent='Resume serving';$('start').hidden=false;$('stop').hidden=true;activity(busy?'FINISHING REQUEST':'PAUSED');await reportState().catch(error);};
+$('stop').onclick=async()=>{enabled=false;presence?.changed();$('start').textContent='Resume serving';$('start').hidden=false;$('stop').hidden=true;activity(busy?'FINISHING REQUEST':'PAUSED');await reportState().catch(error);};
 $('connect').onclick=()=>{void connect($('pair-code').value.trim()).catch(error);};
 function stopCamera(){camera?.getTracks().forEach(track=>track.stop());camera=null;$('camera').hidden=true;$('scan').textContent='Scan desktop QR';}
 $('scan').onclick=async()=>{try{if(camera){stopCamera();return;}camera=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});const video=$('camera');video.srcObject=camera;video.hidden=false;await video.play();$('scan').textContent='Stop camera';
  const canvas=document.createElement('canvas'),context=canvas.getContext('2d',{willReadFrequently:true});
  const scan=()=>{if(!camera)return;if(video.readyState>=2){canvas.width=video.videoWidth;canvas.height=video.videoHeight;context.drawImage(video,0,0);const pixels=context.getImageData(0,0,canvas.width,canvas.height),code=jsQR(pixels.data,pixels.width,pixels.height);if(code){stopCamera();void connect(code.data).catch(error);return;}}setTimeout(scan,180);};scan();
  }catch(cause){stopCamera();error(cause);}};
-document.addEventListener('visibilitychange',()=>{void reportState().catch(error);});
+document.addEventListener('visibilitychange',()=>{presence?.changed();void reportState().catch(error);});
 setInterval(()=>{void report({type:'heartbeat'}).catch(error);},5000);
 window.addEventListener('pagehide',()=>{stopCamera();presence?.close();connection?.close();peer?.destroy();relay?.destroy();});
 if(location.hash.startsWith('#pair=')){$('wallet-link').hidden=false;void connect(location.href).catch(error);}
-renderNetwork($('map'),{nodes:[{id:'browser',name:'This browser',kind:'browser'}],edges:[]});
+renderNetwork($('map'),{nodes:[],edges:[]});
 
 $('harvest').onchange=()=>{if(approved&&!connection?.guest){harvesting=$('harvest').checked;void report({type:'harvest',enabled:harvesting}).catch(error);$('account').textContent=harvesting?'Harvesting to paired desktop account':'Trusted desktop linked · harvesting disabled';}else if($('harvest').checked){$('account').textContent='Scan your desktop QR and approve this device to harvest there.';}};
-presence=new Presence(()=>({kind:'browser',name:'Web browser',busy,model:engineModel??'',ready:enabled&&!document.hidden,connected:approved,gatewayId:approved?connectedGateway:undefined,traffic:{...traffic},transport:connection?.transport??(approved?'webrtc':'none')}),nodes=>{
- visibleNodes=nodes;$('online').textContent=String(nodes.length);$('discovery').textContent=nodes.length>1?'Live public discovery · '+nodes.length+' sessions visible':'Discovering devices via public relays…';
+presence=new Presence(()=>({kind:'browser',name:nodeProfile.name,profile:nodeProfile,busy,model:engineModel??'',ready:Boolean(engine)&&enabled&&!document.hidden,connected:approved,gatewayId:approved?connectedGateway:undefined,traffic:{...traffic},transport:connection?.transport??(approved?'webrtc':'none')}),nodes=>{
+ visibleNodes=nodes;const active=servingTopology({nodes});$('online').textContent=String(active.nodes.length);$('discovery').textContent=active.visitors+' visitors; only serving devices appear on the map';
  renderNetwork($('map'),{nodes:nodes.map(node=>({...node,kind:node.kind==='desktop'?'peer':'browser'})),edges:[]});
  if(enabled&&!approved&&!connecting&&!$('harvest').checked&&Date.now()>=retryAfter){const target=nodes.find(node=>node.kind==='desktop'&&node.gateway),gateway=target?{...target.gateway,sessionId:target.id}:null;if(gateway){retryAfter=Date.now()+20000;void connect('',gateway).catch(cause=>{connecting=false;retryAfter=Date.now()+20000;error(cause);});}}
 });
 
 phoneAlive(()=>({selfId:presence?.id,nodes:visibleNodes,busy,connected:approved,enabled,model:engine?'Qwen3.5 · 0.8B':''}));
+
+profileEditor($('web-node-profile'),nodeProfile,async value=>{localStorage.setItem('llmesh.node-profile',JSON.stringify(value));nodeProfile=value;presence.changed();await reportState();});

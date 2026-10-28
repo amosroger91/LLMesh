@@ -51,6 +51,7 @@ else {
     });
     handle('status', () => service.status());
     handle('privacy', value => service.configurePrivacy(value));
+    handle('node-profile',value=>service.configureNodeProfile(value));
     const saveDonations=()=>writeFileSync(donationsPath,safeStorage.encryptString(JSON.stringify(service.providers.configuration())));
     handle('provider-models',value=>discoverProvider(value));
     handle('provider-add',value=>{service.providers.configure([...service.providers.configuration(),value]);saveDonations();return service.providers.snapshot();});
@@ -98,12 +99,14 @@ else {
       });
     });
     let controller;
-    handle('chat', async job => {
+    const chat=async job => {
       if (controller) throw new Error('A request is already running');
       controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 180000);
       try { return await service.chat(service.pubkey, job, text => emit('delta', text), controller.signal); }
       finally { clearTimeout(timer); controller = null; }
-    });
+    };
+    handle('chat',chat);
+    handle('companion-chat',job=>chat({...job,hardware_only:undefined,hardwareOnly:true}));
     handle('cancel', () => controller?.abort());
     await window.loadFile(join(here, '../ui/index.html'));
     if (process.platform === 'win32') service.ollama.installRuntime = () => new Promise((resolve, reject) => {
