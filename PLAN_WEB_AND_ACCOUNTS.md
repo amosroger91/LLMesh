@@ -226,3 +226,5 @@ must not cache authenticated API responses or root credentials in the service wo
 
 
 Implemented follow-up: public ephemeral Nostr discovery, automatic donation-only guest browsers through desktop gateways, optional QR-linked harvesting, and external-worker consent enforcement. Full root-account wallet login is still separate from this worker-only linking.
+
+Follow-up: guest-only encrypted Nostr relay fallback, separate discovered/connected/ready worker reporting, browser-directed streaming test, saved owner API routing defaults, optional harvesting for trusted paired workers, and mobile fullscreen visualization with Screen Wake Lock. Full native QR pairing across restricted NAT and background mobile inference are not claimed.

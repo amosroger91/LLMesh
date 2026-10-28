@@ -26,6 +26,12 @@ app.on('browser-window-created', (_event, window) => {
       if (result.levels !== 3 || result.modelChooser || result.socialNavigation || result.error) throw new Error(JSON.stringify(result));
       const desktopModules=await window.webContents.executeJavaScript(`['network-map','public-network-map','public-network-count','pair-create','linked-devices','donor-list','privacy-mode'].every(id=>Boolean(document.getElementById(id)))`);
       assert.equal(desktopModules,true,'Desktop is missing a current mesh module');
+      await window.webContents.executeJavaScript(`(async()=>{
+        const select=document.getElementById('privacy-mode');select.value='allow-third-party';select.dispatchEvent(new Event('change'));
+        for(let i=0;i<50;i++){if((await window.llmesh.status()).inferencePrivacy==='allow-third-party')break;await new Promise(resolve=>setTimeout(resolve,20));}
+        if((await window.llmesh.status()).inferencePrivacy!=='allow-third-party')throw new Error('Privacy dropdown did not save immediately');
+        select.value='mesh-only';select.dispatchEvent(new Event('change'));for(let i=0;i<50;i++){if((await window.llmesh.status()).inferencePrivacy==='mesh-only')return;await new Promise(resolve=>setTimeout(resolve,20));}throw new Error('Privacy dropdown did not restore');
+      })()`);
       const clipboardBefore = clipboard.readText();
       await window.webContents.executeJavaScript(`window.llmesh.copy('apiKey')`);
       assert.match(clipboard.readText(), /^[a-f0-9]{64}$/);

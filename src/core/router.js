@@ -47,7 +47,7 @@ export function planRoute(job, workers, now = Date.now()) {
     if(['third-party','community'].includes(worker.source)&&job.privacy!=='allow-third-party'){excluded.add('external workers excluded by your privacy setting');continue;}
     if(job.tools?.length&&worker.supportsTools===false){excluded.add('available browser workers do not support tool calls; a native or tool-capable API worker is required');continue;}
     if (worker.busy !== 0 || !Number.isFinite(worker.seen) || now - worker.seen >= 35000 || worker.seen > now + 60000 ||
-        (job.workerKey && job.workerKey !== worker.pubkey)) continue;
+        (job.workerKey && job.workerKey !== worker.pubkey) || (job.instanceId&&job.instanceId!==worker.instanceId)) continue;
     for (const model of models) {
       if (!worker.models.includes(model.id) || (!automatic && job.model !== model.id)) continue;
       if(worker.maxContextTokens!=null&&(job.contextTokens??4096)>worker.maxContextTokens){excluded.add(`request needs ${job.contextTokens??4096} context tokens; browser limit is ${worker.maxContextTokens}`);continue;}

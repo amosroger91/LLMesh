@@ -54,6 +54,10 @@ export async function startApi(service, { port = 7337, host = '127.0.0.1', tls }
         }
         return json(200, service.ledger.register(pubkey));
       }
+      if(req.method==='GET'&&pathname==='/v1/node'){
+        if(pubkey!==service.pubkey)return error(403,'Node diagnostics require this desktop account');
+        const state=service.status();return json(200,{inferencePrivacy:state.inferencePrivacy,setup:state.setup,serving:state.serving,browserDevices:state.browserDevices,slots:service.localSlots(),readyBrowserWorkers:state.browserDevices.filter(device=>device.free>0).length});
+      }
       if (req.method === 'GET' && pathname === '/v1/account') {
         if (!service.requirePayments) return json(200, service.ledger.account(pubkey));
         const wallet = pubkey === service.pubkey ? service.payments?.wallet.address : service.ledger.db.prepare('SELECT wallet FROM account_wallets WHERE pubkey=?').get(pubkey)?.wallet;

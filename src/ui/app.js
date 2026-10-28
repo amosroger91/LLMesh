@@ -6,7 +6,7 @@ import { npubEncode } from 'nostr-tools/nip19';
 const $ = id => document.getElementById(id), api = window.llmesh;
 let first = true, state, store, outputNode;
 let companionHistory = [], inferenceActive = false;
-let renderDonations;
+let renderDonations,privacySaving=false;
 function error(e) { $('error').textContent = e.message ?? String(e); }
 function bind(id, fn) { $(id).onclick = async () => { $('error').textContent = ''; try { await fn(); } catch (e) { error(e); } }; }
 async function task(id, fn) { $(id).disabled = true; try { return await fn(); } finally { $(id).disabled = false; } }
@@ -41,6 +41,7 @@ function renderPayments(payment) {
 }
 async function refresh() {
   state = await api.status();
+  if(!privacySaving)$('privacy-mode').value=state.inferencePrivacy??'mesh-only';
   $('memory').textContent = `${state.hardware.freeRamGB.toFixed(1)} GB free RAM`;
   $('online').textContent = state.topology?.nodes.filter(node=>node.kind!=='provider').length ?? new Set(state.workers.map(worker=>worker.pubkey)).size + 1;
   $('network').textContent = state.workers.length ? 'Inference mesh connected' : 'Local inference node';
@@ -89,18 +90,24 @@ document.querySelectorAll('[data-view]').forEach(button => { button.onclick = ()
   document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav === button));
   $('page-title').textContent = button.textContent.trim(); localStorage.setItem('llmesh-view', button.dataset.view);
 }; });
+$('privacy-mode').onchange=async()=>{
+  const select=$('privacy-mode'),value=select.value;privacySaving=true;select.disabled=true;$('error').textContent='';
+  try{await api.privacy(value);state.inferencePrivacy=value;$('privacy-note').textContent='Saved automatically · applies to desktop requests and API clients that omit privacy. Explicit request settings take precedence.';}
+  catch(cause){error(cause);select.value=state.inferencePrivacy??'mesh-only';$('privacy-note').textContent='Could not save inference routing preference.';}
+  finally{privacySaving=false;select.disabled=false;}
+};
 function showRoute(route) { for (const id of ['route-status', 'companion-route']) $(id).textContent = route.reason; }
 api.onRoute(showRoute);
 document.querySelectorAll('[data-level]').forEach(button => { button.onclick = async () => {
   try { await api.contribution(button.dataset.level); await refresh(); } catch (e) { error(e); }
 }; });
 bind('retry-setup', () => task('retry-setup', async () => { await api.contribution(state.pendingContribution ?? state.contributionLevel); await refresh(); }));
-async function runInference(job, target) {
+async function runInference(job, target, privacy=$('privacy-mode').value) {
   if (inferenceActive) throw new Error('A request is already running');
   inferenceActive = true; $('send').disabled = $('companion-send').disabled = true;
   outputNode = document.createTextNode(''); target.append(outputNode);
   try {
-    const receipt = await api.chat({...job,privacy:$('privacy-mode').value});
+    const receipt = await api.chat({...job,privacy});
     const detail = `Completed using ${receipt.model} on ${receipt.worker === state.pubkey ? 'your node' : short(receipt.worker)} · ${receipt.credits} credits (${receipt.promptTokens ?? 0} input + ${receipt.outputTokens ?? 0} output tokens) · ${receipt.route.settlement === 'local-self' ? 'spent and earned back' : receipt.transaction ?? (receipt.settlement === 'settle-pending' ? 'settlement pending' : 'settled')}`;
     for (const id of ['route-status', 'companion-route']) $(id).textContent = detail + (receipt.route.degraded ? ' · Below recommended tier' : '');
     return { receipt, text: outputNode.textContent };
@@ -118,6 +125,13 @@ bind('send', async () => {
     status.className = 'micro test-success'; status.textContent = '✓ Endpoint working · response received and request completed';
   } catch (e) { status.className = 'micro test-failure'; status.textContent = '✕ Test failed: ' + e.message; throw e; }
 });
+bind('test-browser',()=>task('test-browser',async()=>{
+  await refresh();const device=state.browserDevices.find(device=>device.free>0),status=$('browser-test-status');
+  if(!device){status.className='micro test-failure';status.textContent='No ready browser worker is connected. Discovered sessions are not worker connections. Load the phone model, keep its tab visible, and wait for READY.';return;}
+  status.className='micro';status.textContent='Streaming a test from '+device.name+'…';$('browser-test-answer').textContent='';
+  try{const result=await runInference({model:device.model,instanceId:device.id,messages:[{role:'user',content:'Reply with a short greeting to confirm this browser worker is working.'}],maxTokens:32},$('browser-test-answer'),'allow-third-party');if(!result.text.trim())throw new Error('No text response');status.className='micro test-success';status.textContent='✓ Browser worker streamed a response · '+result.receipt.model;}
+  catch(cause){status.className='micro test-failure';status.textContent='✕ '+cause.message;throw cause;}
+}));
 bind('cancel', () => api.cancel());
 api.onDelta(text => { if (typeof text === 'string') outputNode?.appendData(text); });
 api.onProgress(item => { $('setup').textContent = item.status ?? ''; $('progress').value = item.total ? item.completed / item.total * 100 : 0; });

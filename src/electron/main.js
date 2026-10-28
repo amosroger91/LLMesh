@@ -50,6 +50,7 @@ else {
       return fn(...args);
     });
     handle('status', () => service.status());
+    handle('privacy', value => service.configurePrivacy(value));
     const saveDonations=()=>writeFileSync(donationsPath,safeStorage.encryptString(JSON.stringify(service.providers.configuration())));
     handle('provider-models',value=>discoverProvider(value));
     handle('provider-add',value=>{service.providers.configure([...service.providers.configuration(),value]);saveDonations();return service.providers.snapshot();});
@@ -65,8 +66,8 @@ else {
     });
     handle('browser-approve', value => {
       if (!pairing || pairing.used || pairing.expires < Date.now() || value.nonce !== pairing.nonce) throw new Error('Pairing expired or already used; generate a new QR');
-      service.browserWorkers.register(value.deviceId,value.name);pairing.used=true;
-      return {account:service.pubkey,scope:'worker-only'};
+      service.browserWorkers.register(value.deviceId,value.name,false,value.harvest!==false);pairing.used=true;
+      return {account:service.pubkey,scope:value.harvest===false?'trusted-donation':'worker-only'};
     });
     handle('browser-guest', value => {service.browserWorkers.register(value.deviceId,value.name,true);return {scope:'donation-only'};});
     handle('browser-report', (id,event) => {try{return service.browserWorkers.report(id,event);}catch(error){service.browserWorkers.remove(id);throw error;}});

@@ -4,10 +4,11 @@ import {usageCredits} from './pricing.js';
 
 export class BrowserWorkers extends EventEmitter {
   constructor(){super();this.devices=new Map();this.tasks=new Map();this.timer=setInterval(()=>this.expire(),5000);this.timer.unref();}
-  register(id,name,community=false){if(!/^[a-f0-9]{64}$/.test(id)||this.devices.size>=16)throw new Error('Invalid device or device limit reached');
-    this.devices.set(id,{id:'web-'+id,name:String(name).slice(0,60),deviceId:id,model:'qwen3.5:0.8b',state:'paired',busy:0,lastSeen:Date.now(),engine:'WebLLM',community});}
+  register(id,name,community=false,harvest=!community){if(!/^[a-f0-9]{64}$/.test(id)||this.devices.size>=16)throw new Error('Invalid device or device limit reached');
+    this.devices.set(id,{id:'web-'+id,name:String(name).slice(0,60),deviceId:id,model:'qwen3.5:0.8b',state:'paired',busy:0,lastSeen:Date.now(),engine:'WebLLM',community,harvest});}
   report(id,event){const device=this.devices.get(id);if(!device)throw new Error('Device is not approved');device.lastSeen=Date.now();
     if(event.type==='heartbeat')return;
+    if(event.type==='harvest'){if(device.community||typeof event.enabled!=='boolean')throw new Error('Pair a trusted desktop before changing harvesting');device.harvest=event.enabled;return;}
     if(event.type==='state'){if(!['paired','loading','ready','paused','error'].includes(event.state))throw new Error('Invalid browser state');device.state=event.state;device.engineModel=String(event.engineModel??'').slice(0,100);return;}
     const task=this.tasks.get(event.id);if(!task)return;if(task.deviceId!==id)throw new Error('Wrong browser request owner');
     if(event.type==='delta'){if(typeof event.text!=='string'||(task.bytes+=Buffer.byteLength(event.text))>262144)throw new Error('Browser response too large');task.queue.push({type:'delta',text:event.text});}

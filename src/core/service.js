@@ -47,6 +47,8 @@ export class Service extends EventEmitter {
     this.ledger.register(this.pubkey);
     this.ledger.db.exec('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY,value TEXT NOT NULL)');
     this.placementOptions={...JSON.parse(this.ledger.db.prepare("SELECT value FROM preferences WHERE key='placement'").get()?.value??'{}'),...placement};
+    const savedPrivacy=this.ledger.db.prepare("SELECT value FROM preferences WHERE key='inference_privacy'").get()?.value;
+    this.inferencePrivacy=['mesh-only','allow-third-party'].includes(savedPrivacy)?savedPrivacy:'mesh-only';
     this.contributionLevel = this.ledger.db.prepare("SELECT value FROM preferences WHERE key='contribution'").get()?.value ?? 'medium';
     if (!CONTRIBUTION[this.contributionLevel]) this.contributionLevel = 'medium';
     this.setup = { state: 'waiting', message: 'Automatic hardware setup will start shortly.' };
@@ -81,6 +83,11 @@ export class Service extends EventEmitter {
     await this.payments.verify(job.payment.id, job.payer, this.payments.wallet.address, pricing.priceUnits);
     try { this.ledger.db.prepare('INSERT INTO worker_payments(id) VALUES (?)').run(job.payment.id); } catch { throw new Error('Worker rejected reused payment'); }
   }
+  configurePrivacy(value){
+    if(!['mesh-only','allow-third-party'].includes(value))throw new Error('Invalid inference privacy mode');
+    this.ledger.db.prepare("INSERT OR REPLACE INTO preferences VALUES ('inference_privacy', ?)").run(value);this.inferencePrivacy=value;return {inferencePrivacy:value};
+  }
+  requestPolicy(input,payer){return payer===this.pubkey&&input?.privacy==null&&input?.allow_third_party==null?{...input,privacy:this.inferencePrivacy}:input;}
   async initialize() {
     await this.scanHardware();
     await this.refresh(); await this.energy.scan();
@@ -176,7 +183,7 @@ export class Service extends EventEmitter {
     return {nodes,edges,scope:'Known trusted peers and linked browser devices'};
   }
   status() {
-    return { draining: Boolean(this.draining), donations: this.providers.snapshot(), browserDevices: this.browserWorkers.snapshot(), topology: this.topology(), instances: this.pool ? this.ollama.snapshot() : this.nativeSlots(), placement: this.profile?.placement ?? this.proposedProfile?.placement, placementOptions:this.placementOptions, pubkey: this.pubkey, hardware: this.hardware, recommendation: this.recommendation, models: [...catalog.models,...this.providers.snapshot().map(provider=>provider.modelInfo)],
+    return { inferencePrivacy:this.inferencePrivacy, draining: Boolean(this.draining), donations: this.providers.snapshot(), browserDevices: this.browserWorkers.snapshot(), topology: this.topology(), instances: this.pool ? this.ollama.snapshot() : this.nativeSlots(), placement: this.profile?.placement ?? this.proposedProfile?.placement, placementOptions:this.placementOptions, pubkey: this.pubkey, hardware: this.hardware, recommendation: this.recommendation, models: [...catalog.models,...this.providers.snapshot().map(provider=>provider.modelInfo)],
       installed: this.ready, serving: this.servingModels(), assignedModel: this.assignedModel, contribution: this.profile ?? this.proposedProfile,
       contributionLevel: this.contributionLevel, pendingContribution: this.pendingContribution, setup: this.setup,
       currentModel: this.currentModel, lastRoute: this.lastRoute, installing: this.installing, busy: this.busy, workers: this.mesh?.workers() ?? [],
@@ -217,7 +224,8 @@ export class Service extends EventEmitter {
       }
     } finally { this.busy = Math.max(0,this.busy-1); if(!this.busy)this.currentModel = null;if(!auxiliary){this.localEnergyJobs--;if(!this.localEnergyJobs)this.energy.stop();} this.applyPending(); }
   }
-  route(input, _payer = this.pubkey, includeBusy = false) {
+  route(input, payer = this.pubkey, includeBusy = false) {
+    input=this.requestPolicy(input,payer);
     const job = validateJob(input);
     const candidates = [...(this.mesh?.workers() ?? [])].filter(worker => !this.requirePayments ||
       (this.payments?.state.configured && worker.wallet && worker.chainId === this.payments?.state.chainId && worker.escrow?.toLowerCase() === this.payments?.settings.escrow?.toLowerCase()));
@@ -235,7 +243,7 @@ export class Service extends EventEmitter {
     try { return planRoute(job, candidates); }
     catch (error) {
       if (!candidates.some(worker => worker.models.length && worker.busy === 0)) {
-        throw new Error(`No inference worker is ready. Your node: ${this.setup.message} Other workers may be offline or busy.`, {cause:error});
+        throw new Error(`No inference worker is ready. Your node: ${this.setup.message} ${this.browserWorkers.snapshot().length} browser devices connected; ${this.browserWorkers.snapshot().filter(device=>device.free>0).length} ready. Public discovery is not a worker connection. Keep the phone tab visible, load its model, and connect it to this desktop. Guest workers require privacy: allow-third-party; paired trusted workers can serve mesh-only requests.`, {cause:error});
       }
       if(this.setup.state!=='ready')throw new Error(`${error.message} Your native node: ${this.setup.message}`,{cause:error});
       throw error;
@@ -264,6 +272,7 @@ export class Service extends EventEmitter {
     }}));return {object:'llmesh.swarm',agents:width,results};
   }
   async chat(payer, input, onDelta, signal = AbortSignal.timeout(180000), onRoute) {
+    input=this.requestPolicy(input,payer);
     let job = validateJob(input);signal.throwIfAborted();
     if(this.draining)throw Object.assign(new Error('Node is draining'),{retryable:true});
     if (this.requests >= 16) throw new Error('Coordinator at capacity');
