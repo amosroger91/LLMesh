@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "repository": "amosroger91/LLMesh",
+  "releaseTag": "model-vault-v1",
+  "models": [
+    {
+      "id": "qwen3.5:0.8b",
+      "manifest": "de63045f29755d4721c09d54c9b45c2dadb644f4fd7d604d4cac90d96049971c",
+      "gguf": "889ea3b9143cdc32146c7d530ce5f3d452ec18069086f6f4167ce9ae72a9691f"
+    },
+    {
+      "id": "qwen3.5:2b",
+      "manifest": "0689d44085e06d165161a8a9a1731344278cfb5aade63a3c3dbdb48ab54b130a",
+      "gguf": "e8bf47d40c5ba68baf8f3e503ee36710da6e8641cb0a670a508cff5b3f0cfbf7"
+    },
+    {
+      "id": "qwen3.5:4b",
+      "manifest": "d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04",
+      "gguf": "a9d0a3e1d8c91732a3812becd31f8d4a8ff57414903f226306069f0437e2ac50"
+    },
+    {
+      "id": "qwen3.5:9b",
+      "manifest": "56671c2ab9385f9cfcb404638e32cd62d88e3501d44822208363c010179a3c90",
+      "gguf": "02d45dc1cf451ba2475ac33b301c2dd8f985abe4c182ce04a1f2f5bf0260278d"
+    },
+    {
+      "id": "qwen3.8:27b",
+      "manifest": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+      "gguf": "f5f1dd8920d417aac2718b0bda3403da274301efdd6760b4f0f4b864ff2ad57d"
+    },
+    {
+      "id": "qwen3.5:2b-q4_K_M",
+      "manifest": "1e2d21a4f03ab9e4a9c1976a4b7e88f21de61d65f2c5485d8fde8942be73f1e7",
+      "gguf": "20cb277f0967ace47b0b5d5658e5e494a88937f7378b74b5a266496400938f4c"
+    },
+    {
+      "id": "qwen3.5:4b-q4_K_M",
+      "manifest": "d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04",
+      "gguf": "a9d0a3e1d8c91732a3812becd31f8d4a8ff57414903f226306069f0437e2ac50"
+    },
+    {
+      "id": "qwen3.5:4b-abliterated-q4_K_M",
+      "gguf": "423f10b6ec2d99c3378143d7cd3b80eb4887b3ed92103103ac59173b404f4f7c",
+      "abliterated": true
+    }
+  ],
+  "assets": [
+    {
+      "sha256": "de63045f29755d4721c09d54c9b45c2dadb644f4fd7d604d4cac90d96049971c",
+      "size": 1563,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/manifests/0.8b",
+      "type": "manifest",
+      "localPath": "vendor/native/manifests/qwen3.5-0.8b.json"
+    },
+    {
+      "sha256": "1226d1a5284ac9844d3cac42321227d361d4417af63515132495e5afaf9c2462",
+      "size": 234,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:1226d1a5284ac9844d3cac42321227d361d4417af63515132495e5afaf9c2462",
+      "type": "application/vnd.docker.container.image.v1+json"
+    },
+    {
+      "sha256": "5ba2eb9bf28c5b5ff7a705f07bd9269f0f2dbd6cb2b4c46d5f98ed8d15d18883",
+      "size": 207346304,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:5ba2eb9bf28c5b5ff7a705f07bd9269f0f2dbd6cb2b4c46d5f98ed8d15d18883",
+      "type": "application/vnd.ollama.image.projector"
+    },
+    {
+      "sha256": "889ea3b9143cdc32146c7d530ce5f3d452ec18069086f6f4167ce9ae72a9691f",
+      "size": 811843520,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:889ea3b9143cdc32146c7d530ce5f3d452ec18069086f6f4167ce9ae72a9691f",
+      "type": "application/vnd.ollama.image.model"
+    },
+    {
+      "sha256": "b0108ebdcf5adea94899909c0cd6c12565f079f819991e68e464cb2e69a5d93d",
+      "size": 302867776,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:b0108ebdcf5adea94899909c0cd6c12565f079f819991e68e464cb2e69a5d93d",
+      "type": "application/vnd.ollama.image.draft"
+    },
+    {
+      "sha256": "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315",
+      "size": 13,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315",
+      "type": "application/vnd.ollama.image.template"
+    },
+    {
+      "sha256": "50cbab8a892c5f2993b8c7351a99182507472def3b1374558308605d99b86b32",
+      "size": 11343,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:50cbab8a892c5f2993b8c7351a99182507472def3b1374558308605d99b86b32",
+      "type": "application/vnd.ollama.image.license"
+    },
+    {
+      "sha256": "3cfce0087eaaa51070eb51ea44b80e6ccfb89d08ce58f4aeb0e48261aa9da329",
+      "size": 87,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:3cfce0087eaaa51070eb51ea44b80e6ccfb89d08ce58f4aeb0e48261aa9da329",
+      "type": "application/vnd.ollama.image.params"
+    },
+    {
+      "sha256": "0689d44085e06d165161a8a9a1731344278cfb5aade63a3c3dbdb48ab54b130a",
+      "size": 1088,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/manifests/2b",
+      "type": "manifest",
+      "localPath": "vendor/native/manifests/qwen3.5-2b.json"
+    },
+    {
+      "sha256": "0f7af3a2d4145d7e4dbc9dbab778ac7a6aee7104fb93570c047726b5a816781f",
+      "size": 175,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:0f7af3a2d4145d7e4dbc9dbab778ac7a6aee7104fb93570c047726b5a816781f",
+      "type": "application/vnd.docker.container.image.v1+json"
+    },
+    {
+      "sha256": "5ddf560e34046fd958b2576324f2a9b57d70f297afe6526958d60a23f3bfc20b",
+      "size": 671372768,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:5ddf560e34046fd958b2576324f2a9b57d70f297afe6526958d60a23f3bfc20b",
+      "type": "application/vnd.ollama.image.projector"
+    },
+    {
+      "sha256": "e8bf47d40c5ba68baf8f3e503ee36710da6e8641cb0a670a508cff5b3f0cfbf7",
+      "size": 2012012448,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:e8bf47d40c5ba68baf8f3e503ee36710da6e8641cb0a670a508cff5b3f0cfbf7",
+      "type": "application/vnd.ollama.image.model"
+    },
+    {
+      "sha256": "9371364b27a52acac9d87f88bd93c9db1174d8d6ec57f6888925cdc1788871ff",
+      "size": 65,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:9371364b27a52acac9d87f88bd93c9db1174d8d6ec57f6888925cdc1788871ff",
+      "type": "application/vnd.ollama.image.params"
+    },
+    {
+      "sha256": "d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04",
+      "size": 1088,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/manifests/4b-q4_K_M",
+      "type": "manifest",
+      "localPath": "vendor/native/manifests/qwen3.5-4b.json"
+    },
+    {
+      "sha256": "788a4d94bc3f431ac0cd067005be4b838a09330427962952420b05d10ecf84db",
+      "size": 177,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:788a4d94bc3f431ac0cd067005be4b838a09330427962952420b05d10ecf84db",
+      "type": "application/vnd.docker.container.image.v1+json"
+    },
+    {
+      "sha256": "e56a899b1540860385465756dd308c84417410b94dbc1c380adffd20a921ca60",
+      "size": 675569120,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:e56a899b1540860385465756dd308c84417410b94dbc1c380adffd20a921ca60",
+      "type": "application/vnd.ollama.image.projector"
+    },
+    {
+      "sha256": "a9d0a3e1d8c91732a3812becd31f8d4a8ff57414903f226306069f0437e2ac50",
+      "size": 2648593216,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:a9d0a3e1d8c91732a3812becd31f8d4a8ff57414903f226306069f0437e2ac50",
+      "type": "application/vnd.ollama.image.model"
+    },
+    {
+      "sha256": "56671c2ab9385f9cfcb404638e32cd62d88e3501d44822208363c010179a3c90",
+      "size": 1088,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/manifests/9b",
+      "type": "manifest",
+      "localPath": "vendor/native/manifests/qwen3.5-9b.json"
+    },
+    {
+      "sha256": "08f9698c1116d2ba3d2c1751f6e98919823e13bb28ff5eb7451c7bc9b40907c5",
+      "size": 177,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:08f9698c1116d2ba3d2c1751f6e98919823e13bb28ff5eb7451c7bc9b40907c5",
+      "type": "application/vnd.docker.container.image.v1+json"
+    },
+    {
+      "sha256": "f836f08f921193f4d6b6a6952dba0a6fb116759d26a757bcb395d570d73976ca",
+      "size": 921704832,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:f836f08f921193f4d6b6a6952dba0a6fb116759d26a757bcb395d570d73976ca",
+      "type": "application/vnd.ollama.image.projector"
+    },
+    {
+      "sha256": "02d45dc1cf451ba2475ac33b301c2dd8f985abe4c182ce04a1f2f5bf0260278d",
+      "size": 5629109120,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:02d45dc1cf451ba2475ac33b301c2dd8f985abe4c182ce04a1f2f5bf0260278d",
+      "type": "application/vnd.ollama.image.model"
+    },
+    {
+      "sha256": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+      "size": 986,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.8/manifests/27b",
+      "type": "manifest",
+      "localPath": "vendor/native/manifests/qwen3.8-27b.json"
+    },
+    {
+      "sha256": "492b2922d38e553cabc2d319345644ed482874fbf5e5c9e4495cbf8e17b0cf5f",
+      "size": 215,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.8/blobs/sha256:492b2922d38e553cabc2d319345644ed482874fbf5e5c9e4495cbf8e17b0cf5f",
+      "type": "application/vnd.docker.container.image.v1+json"
+    },
+    {
+      "sha256": "ac3714bfdddeca31351f2752bf1a63f266f4df87c0b68c895e44945ca704448e",
+      "size": 931146016,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.8/blobs/sha256:ac3714bfdddeca31351f2752bf1a63f266f4df87c0b68c895e44945ca704448e",
+      "type": "application/vnd.ollama.image.projector"
+    },
+    {
+      "sha256": "f5f1dd8920d417aac2718b0bda3403da274301efdd6760b4f0f4b864ff2ad57d",
+      "size": 16810714464,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.8/blobs/sha256:f5f1dd8920d417aac2718b0bda3403da274301efdd6760b4f0f4b864ff2ad57d",
+      "type": "application/vnd.ollama.image.model"
+    },
+    {
+      "sha256": "4c6a8e842ef0d8504549facfb03f1273a8d0022991519bc1888522cc1a5517d1",
+      "size": 11345,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.8/blobs/sha256:4c6a8e842ef0d8504549facfb03f1273a8d0022991519bc1888522cc1a5517d1",
+      "type": "application/vnd.ollama.image.license"
+    },
+    {
+      "sha256": "906ee87bde6cff7bf3c3b1550f55cbbec261e027187fbb9f511f908ffc418334",
+      "size": 114,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.8/blobs/sha256:906ee87bde6cff7bf3c3b1550f55cbbec261e027187fbb9f511f908ffc418334",
+      "type": "application/vnd.ollama.image.params"
+    },
+    {
+      "sha256": "1e2d21a4f03ab9e4a9c1976a4b7e88f21de61d65f2c5485d8fde8942be73f1e7",
+      "size": 1088,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/manifests/2b-q4_K_M",
+      "type": "manifest",
+      "localPath": "vendor/native/manifests/qwen3.5-2b-q4_K_M.json"
+    },
+    {
+      "sha256": "37f57288e2ab61515e0db050eb9eee2d4b25881e49d95e7d20b2809b245d6220",
+      "size": 177,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:37f57288e2ab61515e0db050eb9eee2d4b25881e49d95e7d20b2809b245d6220",
+      "type": "application/vnd.docker.container.image.v1+json"
+    },
+    {
+      "sha256": "20cb277f0967ace47b0b5d5658e5e494a88937f7378b74b5a266496400938f4c",
+      "size": 1274396992,
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:20cb277f0967ace47b0b5d5658e5e494a88937f7378b74b5a266496400938f4c",
+      "type": "application/vnd.ollama.image.model"
+    },
+    {
+      "url": "https://huggingface.co/mradermacher/Huihui-Qwen3.5-4B-abliterated-GGUF/resolve/9d3aebb998fcf084086a3d1c60c31035fcfbf8e1/Huihui-Qwen3.5-4B-abliterated.Q4_K_M.gguf",
+      "sha256": "423f10b6ec2d99c3378143d7cd3b80eb4887b3ed92103103ac59173b404f4f7c",
+      "size": 2707514688,
+      "type": "gguf"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+name: Archive pinned model weights
+on:
+  push:
+    branches: [codex/model-vault-bootstrap]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: model-vault
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.prepare.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts
+            models
+            vendor/native
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/model-vault.js init
+  archive:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts
+            models
+            vendor/native
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MODEL_ASSET: ${{ matrix.asset }}
+        run: node scripts/model-vault.js upload "$MODEL_ASSET"
+  complete:
+    needs: archive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts
+            models
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/model-vault.js complete
