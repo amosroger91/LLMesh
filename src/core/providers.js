@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {usageCredits} from './pricing.js';
 
 export const PROVIDER_BASES={openrouter:'https://openrouter.ai/api/v1',groq:'https://api.groq.com/openai/v1'};
+export function estimatedProviderTokens(job){return Math.ceil(JSON.stringify({messages:job.messages,tools:job.tools??[]}).length/3)+(job.maxTokens??512)+128;}
 function baseUrl(value){const url=new URL(value);if(url.username||url.password||url.search||url.hash||!(url.protocol==='https:'||url.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw new Error('Use HTTPS or a loopback API URL without embedded credentials');return url.href.replace(/\/$/,'');}
 function validate(value){
   const kind=['openrouter','groq','custom'].includes(value.kind)?value.kind:'custom';
@@ -13,8 +14,10 @@ function validate(value){
   if(value.id!=null&&(typeof value.id!=='string'||!/^[a-z0-9-]{1,80}$/.test(value.id)))throw new Error('Invalid donor ID');
   const size=Number(value.model.match(/(?:^|\D)(\d+(?:\.\d+)?)b(?:\b|_)/i)?.[1]??4);
   const rank=size<=2?1:size<4?2:size<=4?3:size<=9?4:5;
+  const maxRequestTokens=value.maxRequestTokens==null||value.maxRequestTokens===''?undefined:Number(value.maxRequestTokens);
+  if(maxRequestTokens!=null&&(!Number.isSafeInteger(maxRequestTokens)||maxRequestTokens<256||maxRequestTokens>1000000))throw new Error('Provider request limit must be 256–1000000 tokens, or blank for automatic');
   return {id:value.id??randomUUID(),kind,baseUrl:base,apiKey:value.apiKey,model:value.model,dailyLimit,enabled:value.enabled!==false,
-    parametersB:size,rank,freeTierConfirmed:true,maxTokensField:value.maxTokensField==='max_completion_tokens'?'max_completion_tokens':'max_tokens'};
+    parametersB:size,rank,maxRequestTokens,freeTierConfirmed:true,maxTokensField:value.maxTokensField==='max_completion_tokens'?'max_completion_tokens':'max_tokens'};
 }
 export async function discoverProvider(value){
   const base=baseUrl(PROVIDER_BASES[value.kind]??value.baseUrl);
@@ -30,6 +33,7 @@ export class ProviderPool {
     db.exec(`CREATE TABLE IF NOT EXISTS provider_usage (provider TEXT NOT NULL,day TEXT NOT NULL,input_tokens INTEGER NOT NULL DEFAULT 0,output_tokens INTEGER NOT NULL DEFAULT 0,requests INTEGER NOT NULL DEFAULT 0,errors INTEGER NOT NULL DEFAULT 0,uncertain_tokens INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(provider,day));`);
     if(!db.prepare('PRAGMA table_info(provider_usage)').all().some(column=>column.name==='uncertain_tokens'))db.exec('ALTER TABLE provider_usage ADD COLUMN uncertain_tokens INTEGER NOT NULL DEFAULT 0');
     db.exec('CREATE TABLE IF NOT EXISTS provider_calls (id TEXT PRIMARY KEY,provider TEXT NOT NULL,configured_model TEXT NOT NULL,reported_model TEXT,input_tokens INTEGER,output_tokens INTEGER,created INTEGER NOT NULL)');
+    db.exec('CREATE TABLE IF NOT EXISTS provider_limits (provider TEXT PRIMARY KEY,request_tokens INTEGER NOT NULL)');
   }
   configure(values){if(this.snapshot().some(provider=>provider.busy))throw new Error('Finish active API requests before changing donations');if(!Array.isArray(values)||values.length>8)throw new Error('Use up to eight donated API models');
     const checked=values.map(validate);this.providers=new Map(checked.map(provider=>[provider.id,{...provider,busy:0,reserved:0,cooldown:0,metrics:{}}]));}
@@ -38,19 +42,33 @@ export class ProviderPool {
   model(id){const provider=[...this.providers.values()].find(provider=>'donated:'+provider.id===id);return provider?{id,parametersB:provider.parametersB,rank:provider.rank,source:'third-party',provider:provider.kind,upstreamModel:provider.model}:null;}
   snapshot(){return [...this.providers.values()].map(provider=>{const usage=this.usage(provider.id),remaining=Math.max(0,provider.dailyLimit-usage.input_tokens-usage.output_tokens-(usage.uncertain_tokens??0)-provider.reserved),model=this.model('donated:'+provider.id);
     return {id:'api-'+provider.id,providerId:provider.id,provider:provider.kind,upstreamModel:provider.model,model:model.id,modelInfo:model,source:'third-party',state:!provider.enabled?'disabled':provider.cooldown>Date.now()?'cooldown':remaining<4096?'quota':'ready',busy:provider.busy,
-      slots:1,free:provider.enabled&&!provider.busy&&provider.cooldown<=Date.now()&&remaining>=4096?1:0,remainingCredits:remaining,dailyLimit:provider.dailyLimit,usage,calls:this.db.prepare('SELECT configured_model,reported_model,input_tokens,output_tokens,created FROM provider_calls WHERE provider=? ORDER BY created DESC LIMIT 10').all(provider.id),metrics:provider.metrics,error:provider.error??null};});}
+      slots:1,free:provider.enabled&&!provider.busy&&provider.cooldown<=Date.now()&&remaining>=4096?1:0,requestTokenLimit:this.requestLimit(provider),remainingCredits:remaining,dailyLimit:provider.dailyLimit,usage,calls:this.db.prepare('SELECT configured_model,reported_model,input_tokens,output_tokens,created FROM provider_calls WHERE provider=? ORDER BY created DESC LIMIT 10').all(provider.id),metrics:provider.metrics,error:provider.error??null};});}
+  requestLimit(provider){const value=Math.min(provider.maxRequestTokens??Infinity,this.db.prepare('SELECT request_tokens FROM provider_limits WHERE provider=?').get(provider.id)?.request_tokens??Infinity);return Number.isFinite(value)?value:undefined;}
   async *chat(job,signal){
     if(job.privacy!=='allow-third-party')throw new Error('Third-party inference was not authorized by the requester');
     const provider=this.providers.get(job.instanceId?.slice(4));if(!provider||'donated:'+provider.id!==job.model)throw new Error('Unknown donated model');
     const reserve=job.contextTokens+job.maxTokens,slot=this.snapshot().find(slot=>slot.id===job.instanceId);
     if(!slot?.free||slot.remainingCredits<reserve)throw new Error('Donated API quota is busy or insufficient');
+    if(slot.requestTokenLimit!=null&&estimatedProviderTokens(job)>slot.requestTokenLimit)throw new Error('This request exceeds the donated provider token limit; compact the conversation or use a larger-capacity worker');
     provider.busy=1;provider.reserved=reserve;provider.controller=new AbortController();const combined=AbortSignal.any([signal,provider.controller.signal,AbortSignal.timeout(180000)]);
     const day=new Date().toISOString().slice(0,10),started=performance.now();let usage,firstAt,reportedModel,finishReason='stop',outputBytes=0;const calls=new Map();
     this.db.prepare('INSERT OR IGNORE INTO provider_usage(provider,day) VALUES (?,?)').run(provider.id,day);
     try{
       const payload={model:provider.model,messages:job.messages,stream:true,stream_options:{include_usage:true},[provider.maxTokensField]:job.maxTokens,...(job.tools.length?{tools:job.tools,tool_choice:job.tool_choice}:{})};
       const response=await fetch(provider.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+provider.apiKey,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:combined,redirect:'error'});
-      if(!response.ok){provider.cooldown=Date.now()+(response.status===429?60000:15000);throw new Error('Donated API HTTP '+response.status+'; donation temporarily paused');}
+      if(!response.ok){
+        if(response.status===413){
+          // Extract only numeric limits: an upstream error may echo private input,
+          // organization IDs or credentials, so never expose the raw error body.
+          let message='';try{const raw=await response.text();if(raw.length<64000){const body=JSON.parse(raw);message=String(body.error?.message??body.message??'');}}catch{/* Generic 413 still provides a useful action. */}
+          const tokenBased=/tokens?|TPM|context/i.test(message),match=message.match(/\bLimit\s*[:=]?\s*([\d,]+)/i),requested=message.match(/\bRequested\s*[:=]?\s*([\d,]+)/i);
+          const limit=tokenBased&&match?Number(match[1].replaceAll(',','')):null;
+          if(Number.isSafeInteger(limit)&&limit>=256&&limit<=1000000)this.db.prepare('INSERT INTO provider_limits VALUES (?,?) ON CONFLICT(provider) DO UPDATE SET request_tokens=MIN(request_tokens,excluded.request_tokens)').run(provider.id,limit);
+          const detail=limit?` Token limit ${limit}${requested?'; requested '+requested[1]:''}.`:'';
+          throw Object.assign(new Error(`Donated API HTTP 413: provider rejected an oversized request.${detail} Compact the conversation/tools or use another worker. Smaller requests can still use this donation.`),{providerRejected:true,providerInstance:job.instanceId});
+        }
+        provider.cooldown=Date.now()+(response.status===429?60000:15000);throw new Error('Donated API HTTP '+response.status+'; donation temporarily paused');
+      }
       const decoder=new TextDecoder();let buffer='';
       for await(const bytes of response.body){buffer+=decoder.decode(bytes,{stream:true});if(buffer.length>1048576)throw new Error('Provider frame too large');let end;
         while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);if(!line.startsWith('data:'))continue;const data=line.slice(5).trim();if(data==='[DONE]')continue;
@@ -68,10 +86,10 @@ export class ProviderPool {
       if(calls.size)yield{type:'tool_calls',calls:[...calls.values()]};
       provider.metrics.tokensPerSecond=usage.completion_tokens/Math.max(.001,(performance.now()-(firstAt??started))/1000);provider.error=null;
       yield{type:'done',tokens:usage.completion_tokens,promptTokens:usage.prompt_tokens,finishReason};
-    }catch(error){provider.error=error.message;provider.cooldown=Math.max(provider.cooldown,Date.now()+60000);
+    }catch(error){provider.error=error.message;if(!error.providerRejected)provider.cooldown=Math.max(provider.cooldown,Date.now()+60000);
       // Failed/unknown usage consumes its full local authorization conservatively.
       // No inference credits are earned without a completed metered response.
-      this.db.prepare('UPDATE provider_usage SET uncertain_tokens=uncertain_tokens+?,errors=errors+1 WHERE provider=? AND day=?').run(reserve,provider.id,day);throw error;
+      this.db.prepare('UPDATE provider_usage SET uncertain_tokens=uncertain_tokens+?,errors=errors+1 WHERE provider=? AND day=?').run(error.providerRejected?0:reserve,provider.id,day);throw error;
     }finally{provider.busy=0;provider.reserved=0;provider.controller=null;}
   }
   close(){for(const provider of this.providers.values())provider.controller?.abort();}

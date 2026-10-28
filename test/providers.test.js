@@ -50,3 +50,19 @@ test('donated APIs require per-request consent, stream actual usage, hide keys a
    assert.throws(()=>validateJob({...request,privacy:'mesh-only',allow_third_party:true}),/Conflicting/);
  }finally{await service.close();upstream.closeAllConnections();await new Promise(resolve=>upstream.close(resolve));rmSync(directory,{recursive:true,force:true});}
 });
+
+test('HTTP 413 learns provider limits, keeps small jobs available, and safely reroutes before streaming',{timeout:10000},async()=>{
+ let calls=0,rejectLarge=true;const upstream=http.createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;const payload=JSON.parse(raw);calls++;
+ if(rejectLarge){res.writeHead(413,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{message:'Request too large on tokens per minute (TPM): Limit 1000, Requested 9000. secret-key private prompt org_secret'}}));return;}
+ res.writeHead(200,{'Content-Type':'text/event-stream'});res.end('data: '+JSON.stringify({choices:[{delta:{content:'small donated response'},finish_reason:'stop'}],usage:{prompt_tokens:2,completion_tokens:2}})+'\n\ndata: [DONE]\n\n');assert.equal(payload.model,'fast-70b');
+ });await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));
+ const directory=mkdtempSync(join(tmpdir(),'llmesh-provider-413-')),secret=generateSecretKey();let service=new Service({directory,secret,network:false,ollama:{close(){},async *chat(){yield{type:'delta',text:'native fallback'};yield{type:'done',promptTokens:2,tokens:2};}}});
+ const config={id:'reject-large',kind:'custom',baseUrl:`http://127.0.0.1:${upstream.address().port}/v1`,apiKey:'secret-key',model:'fast-70b',dailyLimit:100000,freeTierConfirmed:true};
+ const job={model:'llmesh-auto',privacy:'allow-third-party',complexity:'simple',messages:[{role:'user',content:'x'.repeat(9000)}],maxTokens:12};
+ try{service.ready=['qwen3.5:0.8b'];service.providers.configure([config]);let output='';const receipt=await service.chat(service.pubkey,job,delta=>{output+=delta;});assert.equal(output,'native fallback');assert.equal(receipt.model,'qwen3.5:0.8b');assert.equal(calls,1);
+ const status=service.providers.snapshot()[0];assert.equal(status.state,'ready');assert.equal(status.requestTokenLimit,1000);assert.equal(status.usage.uncertain_tokens,0);assert.equal(status.usage.errors,1);assert.equal(service.ledger.account(service.pubkey).balance,100000);assert.match(status.error,/Token limit 1000/);assert.equal(JSON.stringify(status).includes('private prompt'),false);assert.equal(JSON.stringify(status).includes('secret-key'),false);
+ assert.equal(service.route(job).source,'mesh','Known oversized request avoids donor');assert.equal(service.route({...job,model:'donated:reject-large',messages:[{role:'user',content:'hi'}]}).source,'third-party');
+ rejectLarge=false;await service.chat(service.pubkey,{...job,model:'donated:reject-large',messages:[{role:'user',content:'hi'}]},()=>{});assert.equal(calls,2);
+ await service.close();service=new Service({directory,secret,network:false,ollama:{close(){}}});service.providers.configure([config]);assert.equal(service.providers.snapshot()[0].requestTokenLimit,1000,'Learned limit survives restart');
+ }finally{await service.close();upstream.closeAllConnections();await new Promise(resolve=>upstream.close(resolve));rmSync(directory,{recursive:true,force:true});}
+});

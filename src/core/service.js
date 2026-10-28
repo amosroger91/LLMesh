@@ -101,7 +101,7 @@ export class Service extends EventEmitter {
     if (this.pool) return this.ollama.snapshot().map(instance=>({id:instance.id,model:instance.model,total:instance.slots,free:this.draining||this.installing?0:instance.free,firstTokenMs:instance.metrics.firstTokenMs,tokensPerSecond:instance.metrics.tokensPerSecond}));
     return this.nativeModels().map(model=>({id:'legacy',model,total:1,free:this.localEnergyJobs||this.installing||this.draining?0:1,...this.modelMetrics[model]}));
   }
-  localSlots() { return [...this.nativeSlots(),...this.browserWorkers.snapshot().map(instance=>({id:instance.id,model:instance.model,total:1,free:this.draining?0:instance.free,supportsTools:false,maxContextTokens:4096,source:instance.community?'community':undefined})),...this.providers.snapshot().map(instance=>({id:instance.id,model:instance.model,total:1,free:this.draining?0:instance.free,source:'third-party',modelInfo:instance.modelInfo,creditBudget:instance.remainingCredits,...instance.metrics}))]; }
+  localSlots() { return [...this.nativeSlots(),...this.browserWorkers.snapshot().map(instance=>({id:instance.id,model:instance.model,total:1,free:this.draining?0:instance.free,supportsTools:false,maxContextTokens:4096,source:instance.community?'community':undefined})),...this.providers.snapshot().map(instance=>({id:instance.id,model:instance.model,total:1,free:this.draining?0:instance.free,source:'third-party',modelInfo:instance.modelInfo,creditBudget:instance.remainingCredits,requestTokenLimit:instance.requestTokenLimit,...instance.metrics}))]; }
   servingModels() { return [...new Set([...this.nativeModels(),...this.browserWorkers.snapshot().filter(instance=>instance.state==='ready').map(instance=>instance.model),...this.providers.snapshot().filter(instance=>instance.free).map(instance=>instance.model)])]; }
   nativeModels() { if(this.pool) return [...new Set(this.ollama.instances.filter(instance=>instance.state==='ready').map(instance=>instance.model.id))]; return this.assignedModel ? this.ready.filter(model => model === this.assignedModel) : this.profile ? [] : this.ready; }
   async configureContribution(level = this.contributionLevel) {
@@ -224,7 +224,7 @@ export class Service extends EventEmitter {
       }
     } finally { this.busy = Math.max(0,this.busy-1); if(!this.busy)this.currentModel = null;if(!auxiliary){this.localEnergyJobs--;if(!this.localEnergyJobs)this.energy.stop();} this.applyPending(); }
   }
-  route(input, payer = this.pubkey, includeBusy = false) {
+  route(input, payer = this.pubkey, includeBusy = false, avoid=new Set()) {
     input=this.requestPolicy(input,payer);
     const job = validateJob(input);
     const candidates = [...(this.mesh?.workers() ?? [])].filter(worker => !this.requirePayments ||
@@ -234,13 +234,13 @@ export class Service extends EventEmitter {
     else candidates.push({ pubkey: this.pubkey, models: this.nativeModels(), contribution: this.profile?.level ?? 'low', busy: Number(Boolean(this.localEnergyJobs || this.installing || this.draining)), seen: Date.now(),
       latencyMs: 0, metrics: this.modelMetrics, loadedModel: this.loadedModel, hardware: this.hardwareSummary(), local: true, wallet: this.payments?.wallet.address });
     for(const instance of this.browserWorkers.snapshot())candidates.push({pubkey:this.pubkey,instanceId:instance.id,models:[instance.model],busy:this.draining||!instance.free?1:0,free:instance.free,seen:Date.now(),latencyMs:5,hardware:{mode:'gpu',maxModelRank:1},local:true,supportsTools:false,maxContextTokens:4096,source:instance.community?'community':undefined,wallet:this.payments?.wallet.address});
-    for(const instance of this.providers.snapshot())candidates.push({pubkey:this.pubkey,instanceId:instance.id,models:[instance.model],modelCatalog:[instance.modelInfo],source:'third-party',creditBudget:instance.remainingCredits,busy:this.draining||!instance.free?1:0,free:instance.free,total:1,seen:Date.now(),latencyMs:0,metrics:{[instance.model]:instance.metrics},local:true,wallet:this.payments?.wallet.address});
+    for(const instance of this.providers.snapshot())candidates.push({pubkey:this.pubkey,instanceId:instance.id,models:[instance.model],modelCatalog:[instance.modelInfo],source:'third-party',creditBudget:instance.remainingCredits,requestTokenLimit:instance.requestTokenLimit,busy:this.draining||!instance.free?1:0,free:instance.free,total:1,seen:Date.now(),latencyMs:0,metrics:{[instance.model]:instance.metrics},local:true,wallet:this.payments?.wallet.address});
     for(const candidate of candidates) {
       const key=candidate.pubkey+':'+(candidate.instanceId??'legacy');const reserved=this.reservations.get(key)??0;
       candidate.free=Math.max(0,(candidate.free??1)-reserved);if(!candidate.free)candidate.busy=1;
       if(includeBusy){candidate.busy=0;candidate.free=1;}
     }
-    try { return planRoute(job, candidates); }
+    try { return planRoute(job, candidates.filter(candidate=>!avoid.has(candidate.pubkey+':'+candidate.instanceId))); }
     catch (error) {
       if (!candidates.some(worker => worker.models.length && worker.busy === 0)) {
         throw new Error(`No inference worker is ready. Your node: ${this.setup.message} ${this.browserWorkers.snapshot().length} browser devices connected; ${this.browserWorkers.snapshot().filter(device=>device.free>0).length} ready. Public discovery is not a worker connection. Keep the phone tab visible, load its model, and connect it to this desktop. Guest workers require privacy: allow-third-party; paired trusted workers can serve mesh-only requests.`, {cause:error});
@@ -249,13 +249,13 @@ export class Service extends EventEmitter {
       throw error;
     }
   }
-  async waitForRoute(input,payer,signal){
+  async waitForRoute(input,payer,signal,avoid=new Set()){
     for(;;){
       signal.throwIfAborted();if(this.closed||this.draining)throw new Error('Node is draining');
-      try{return this.route(input,payer);}catch(error){
+      try{return this.route(input,payer,false,avoid);}catch(error){
         if(!(this.busy||this.reservations.size||this.browserWorkers.snapshot().some(device=>device.busy)||this.mesh?.workers().some(worker=>worker.busy)))throw error;
         // Wait only when a currently occupied slot could actually handle this job.
-        try{this.route(input,payer,true);}catch{throw error;}
+        try{this.route(input,payer,true,avoid);}catch{throw error;}
         await new Promise(resolve=>setTimeout(resolve,25));
       }
     }
@@ -271,7 +271,13 @@ export class Service extends EventEmitter {
       onEvent({type:'finished',index,...results[index]});
     }}));return {object:'llmesh.swarm',agents:width,results};
   }
-  async chat(payer, input, onDelta, signal = AbortSignal.timeout(180000), onRoute) {
+  async chat(payer,input,onDelta,signal=AbortSignal.timeout(180000),onRoute){
+    const avoid=new Set();for(;;){try{return await this.chatAttempt(payer,input,onDelta,signal,onRoute,avoid);}catch(error){
+      if(!error.providerRejected||!error.providerInstance||payer!==this.pubkey||input.payment||!['auto','llmesh-auto'].includes(input.model)||avoid.size>=8)throw error;
+      avoid.add(this.pubkey+':'+error.providerInstance);try{this.route(input,payer,false,avoid);}catch{throw error;}
+    }}
+  }
+  async chatAttempt(payer, input, onDelta, signal, onRoute, avoid) {
     input=this.requestPolicy(input,payer);
     let job = validateJob(input);signal.throwIfAborted();
     if(this.draining)throw Object.assign(new Error('Node is draining'),{retryable:true});
@@ -285,7 +291,7 @@ export class Service extends EventEmitter {
       // Reserve immediately after synchronous selection. Only yield while waiting
       // for occupied slots, so concurrent coordinators cannot choose the same slot.
       for(;;){
-        try{route=this.route(input,payer);break;}catch(error){await this.waitForRoute(input,payer,signal);if(signal.aborted)throw error;}
+        try{route=this.route(input,payer,false,avoid);break;}catch(error){await this.waitForRoute(input,payer,signal,avoid);if(signal.aborted)throw error;}
       }
       const reservation=route.worker+':'+(route.instanceId??'legacy'); this.reservations.set(reservation,(this.reservations.get(reservation)??0)+1); reservationHeld=true; this.lastRoute = route; this.emit('route', route);
       onRoute?.(route);

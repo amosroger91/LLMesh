@@ -100,6 +100,7 @@ export class Mesh extends EventEmitter {
       peer.devices=info.devices??[];
       for(const slot of info.slots??[]){
         if(slot.source!=null&&!['third-party','community'].includes(slot.source))throw new Error('Invalid worker source');
+        if(slot.requestTokenLimit!=null&&(!Number.isSafeInteger(slot.requestTokenLimit)||slot.requestTokenLimit<256||slot.requestTokenLimit>1000000))throw new Error('Invalid provider request limit');
         if(slot.maxContextTokens!=null&&(!Number.isInteger(slot.maxContextTokens)||slot.maxContextTokens<512||slot.maxContextTokens>32768))throw new Error('Invalid context capability');
         if(slot.source==='third-party'){
           const model=slot.modelInfo;
@@ -182,7 +183,7 @@ export class Mesh extends EventEmitter {
         supportsTools:peer.supportsTools,contribution:peer.contribution,wallet:peer.wallet,chainId:peer.chainId,escrow:peer.escrow};
       if(!peer.slots)return [base];
       return peer.slots.map(slot=>({...base,instanceId:slot.id,models:[slot.model],total:slot.total,
-          maxContextTokens:slot.maxContextTokens,source:slot.source,creditBudget:slot.creditBudget,modelCatalog:slot.source==='third-party'?[slot.modelInfo]:[],supportsTools:slot.supportsTools,free:Math.max(0,slot.free-(peer.instanceInFlight?.get(slot.id)??0)),busy:slot.free>(peer.instanceInFlight?.get(slot.id)??0)?0:1,
+          requestTokenLimit:slot.requestTokenLimit,maxContextTokens:slot.maxContextTokens,source:slot.source,creditBudget:slot.creditBudget,modelCatalog:slot.source==='third-party'?[slot.modelInfo]:[],supportsTools:slot.supportsTools,free:Math.max(0,slot.free-(peer.instanceInFlight?.get(slot.id)??0)),busy:slot.free>(peer.instanceInFlight?.get(slot.id)??0)?0:1,
         metrics:{[slot.model]:{firstTokenMs:slot.firstTokenMs,tokensPerSecond:slot.tokensPerSecond}}}));
     });
   }
