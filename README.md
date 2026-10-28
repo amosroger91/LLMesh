@@ -12,7 +12,7 @@ LLMesh turns your computer into an AI node. It detects your hardware, chooses a 
 
 You choose how much computing power to contribute. Use the machine in front of you, share a home GPU with your other devices, or build a trusted group that pools access to larger models.
 
-**Current status:** an Electron/Node implementation with local inference, a trusted peer mesh, prototype Base token contracts and a Rust/WASM foundation. No live LLMESH token or escrow deployment is supplied. The web worker and desktop-approved QR device linking are implemented. An opt-in internet funnel can publish the authenticated API through an LLMesh relay, Tailscale Funnel, a Cloudflare tunnel, or an existing HTTPS address. Native Android, full Nostr remote signing, the full Rust daemon and the downloadable installer matrix remain roadmap work.
+**Current status:** an Electron/Node implementation with local inference, a trusted peer mesh, prototype Base token contracts and a Rust/WASM foundation. No live LLMESH token or escrow deployment is supplied. The web worker and desktop-approved QR device linking are implemented. An opt-in internet funnel can publish that authenticated API for a phone, a cloud job, or any other OpenAI client, through an LLMesh relay, Tailscale Funnel, a Cloudflare tunnel, or an existing HTTPS address. Native Android, full Nostr remote signing, the full Rust daemon and the downloadable installer matrix remain roadmap work.
 
 [Open the web worker](https://amosroger91.github.io/LLMesh/) · [Start](#start-running) · [Features](#what-works-today) · [API](#one-endpoint-for-your-tools) · [Vision](#what-happens-when-the-network-grows) · [Roadmap](#where-were-going)
 
@@ -34,7 +34,7 @@ The ambition is to put more of AI's infrastructure in the hands of the people wh
 | Streaming mesh inference | Authenticated, Noise-encrypted Hyperswarm connections between trusted nodes |
 | Complexity-aware routing | Recommends a tier, then weighs availability, latency, throughput and price |
 | OpenAI-compatible API | Model discovery, streamed chat, function tool calls, route previews and receipts |
-| Internet funnel | Publishes that same authenticated API at a verified public URL. Off by default |
+| Internet funnel | Publishes that same authenticated API at a verified public URL for phones and cloud clients. Off by default |
 | AI companion | A chat interface to that same mesh pipeline, with cancellation and local history |
 | Network map | Live graph of known trusted desktops, their linked browser devices and your donated API workers |
 | Web worker | One-button Qwen3.5 WebGPU/WASM setup, online count and request activity; no wallet UI |
@@ -149,21 +149,21 @@ The default API is loopback-only and rejects browser-origin calls. Protect its b
 
 ## Expose your node with a funnel
 
-A funnel is the standard way to give that loopback API a public URL without opening a router port and without turning authentication off. Pick one provider:
+A funnel is the standard way to give that loopback API a public URL for a phone, a cloud job, or any other OpenAI client, without opening a router port and without turning authentication off. Pick one provider:
 
 | Provider | Use it when | Start |
 | --- | --- | --- |
 | `relay` | Your group runs an LLMesh funnel relay | `LLMESH_FUNNEL=relay` and `LLMESH_FUNNEL_RELAY=https://funnel.example` |
 | `tailscale` | This machine is on Tailscale | `LLMESH_FUNNEL=tailscale` |
-| `cloudflare` | You want a quick HTTPS tunnel | `LLMESH_FUNNEL=cloudflare` |
+| `cloudflare` | You want a stable Cloudflare hostname, or a temporary quick tunnel | `LLMESH_FUNNEL=cloudflare` with `LLMESH_FUNNEL_PUBLIC_URL` and `LLMESH_FUNNEL_CLOUDFLARE_TOKEN`, or the provider alone for a quick tunnel |
 | `public` | The API is already on public HTTPS | `LLMESH_FUNNEL=public` and `LLMESH_FUNNEL_PUBLIC_URL=https://node.example` |
 | `off` | The API stays on this machine | Default |
 
-The node fetches its public URL and treats it as ready only when `/.well-known/llmesh.json` answers with this node's key. Trusted peers then see that verified URL. Point an OpenAI-compatible client at `<public-url>/v1` and use the same API key, or sign NIP-98 for the public URL rather than the loopback URL. The funnel does not publish the key, the wallet, or prompts. Browser pages still cannot call the API. Mesh jobs continue to use the encrypted peer connection; the funnel is how operators and tools reach the node when hole punching is not enough.
+The node fetches its public URL and treats it as ready only when `/.well-known/llmesh.json` answers with this node's key. Trusted peers then see that verified URL. Point an OpenAI-compatible client at `<public-url>/v1` and use the same API key, or sign NIP-98 for the public URL rather than the loopback URL. The funnel keeps the key, the wallet, and prompts on the node. Browser pages remain blocked. Mesh jobs stay on the encrypted peer connection, and the funnel serves the OpenAI-compatible API.
 
 On the desktop, open **Publish this node**, choose a provider, and apply. The relay token is stored with OS encryption. Leave the token field blank to keep the saved token. Copy the public URL only after the status says it is verified.
 
-Run a relay for a group. Put TLS on the relay or on a proxy in front of it, and set a token or a node allowlist:
+Run a relay for a group. A public bind requires TLS on the relay, or `--insecure-listen` when a proxy terminates TLS, and a token or a node allowlist:
 
 ```powershell
 $env:LLMESH_FUNNEL_PUBLIC_BASE = 'https://funnel.example'
@@ -290,7 +290,7 @@ Wider adoption would not automatically remove corporate power or create an equal
 | Track | Current state | Next destination |
 | --- | --- | --- |
 | Desktop | Electron/Node app and local API | Instance controls, recovery and release delivery |
-| Internet funnel | Opt-in relay, Tailscale, Cloudflare, or an existing HTTPS URL, with a reachability check | Mesh-job transport over the funnel, and a hosted relay |
+| Internet funnel | Verified public OpenAI base URL via relay, Tailscale, a named Cloudflare tunnel, or an existing HTTPS address. A public relay requires TLS and a token or allowlist | Phone and cloud clients on that URL. Mesh job dispatch stays on the peer connection |
 | Multi-GPU | Planner/pool and simulated tests | Physical validation, complete UI and energy attribution |
 | Linux | Node headless entrypoint; expanded CLI under development | x64/arm64 tarballs, deb/rpm, systemd and containers |
 | Rust | Quote/placement crates, shared fixtures, CLI preview, WASM exports | Validation/routing bindings, daemon, libp2p and parity-gated desktop sidecar |

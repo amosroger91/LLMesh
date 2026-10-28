@@ -109,7 +109,9 @@ function renderFunnel(funnel = { provider: 'off', state: 'off' }) {
   const status = $('funnel-status');
   if (!status) return;
   const label = { off: 'Funnel is off. This node stays on loopback.', starting: 'Opening the funnel.', pending: 'Funnel is up. Waiting until the public URL reaches this node.', verified: 'Public URL verified. Clients still need your API key.', error: 'Funnel is not reachable.' }[funnel.state] ?? funnel.state;
-  status.textContent = [label, funnel.publicUrl, funnel.error].filter(Boolean).join(' ');
+  const base = funnel.state === 'verified' && funnel.publicUrl ? `OpenAI base URL ${funnel.publicUrl.replace(/\/$/, '')}/v1` : funnel.publicUrl;
+  const temporary = funnel.ephemeral ? 'This hostname changes when the tunnel restarts.' : '';
+  status.textContent = [label, base, temporary, funnel.error].filter(Boolean).join(' ');
 }
 function showRoute(route) { for (const id of ['route-status', 'companion-route']) $(id).textContent = route.reason; }
 api.onRoute(showRoute);
@@ -119,8 +121,8 @@ document.querySelectorAll('[data-level]').forEach(button => { button.onclick = a
 bind('force-model',()=>task('force-model',async()=>{await api.forceModel();await refresh();}));
 bind('retry-setup', () => task('retry-setup', async () => { await api.contribution(state.pendingContribution ?? state.contributionLevel); await refresh(); }));
 bind('funnel-apply', () => task('funnel-apply', async () => {
-  const result = await api.funnelApply({ provider: $('funnel-provider').value, relay: $('funnel-relay').value.trim(), publicUrl: $('funnel-public-url').value.trim(), token: $('funnel-token').value });
-  $('funnel-token').value = ''; renderFunnel(result);
+  const result = await api.funnelApply({ provider: $('funnel-provider').value, relay: $('funnel-relay').value.trim(), publicUrl: $('funnel-public-url').value.trim(), token: $('funnel-token').value, cloudflareToken: $('funnel-cloudflare-token').value });
+  $('funnel-token').value = ''; $('funnel-cloudflare-token').value = ''; renderFunnel(result);
 }));
 bind('funnel-probe', () => task('funnel-probe', async () => { renderFunnel(await api.funnelProbe()); }));
 async function runInference(job, target, privacy=$('privacy-mode').value,companion=false) {

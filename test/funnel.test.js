@@ -39,16 +39,27 @@ test('funnel paths stay inside the published prefix', () => {
   }), 7337), 'https://node.tailnet.ts.net');
 });
 
-test('funnel config rejects a public relay binding and a relay node without a URL', () => {
+test('funnel config keeps a public relay closed until TLS and a token are set', () => {
   const directory = mkdtempSync(join(tmpdir(), 'llmesh-funnel-config-'));
+  const env = envFor(directory);
   try {
-    const off = loadConfig(['doctor', '--offline'], envFor(directory));
+    const off = loadConfig(['doctor', '--offline'], env);
     assert.equal(off.funnel, 'off');
-    const relay = loadConfig(['funnel', 'relay', '--listen', '0.0.0.0:7443'], { ...envFor(directory), LLMESH_FUNNEL_PUBLIC_BASE: 'https://funnel.example' });
-    assert.equal(relay.funnelPlainRelay, true);
+    assert.throws(() => loadConfig(['funnel', 'relay', '--listen', '0.0.0.0:7443'], { ...env, LLMESH_FUNNEL_PUBLIC_BASE: 'https://funnel.example' }), /insecure-listen/);
+    assert.throws(() => loadConfig(['funnel', 'relay', '--listen', '0.0.0.0:7443', '--insecure-listen'], { ...env, LLMESH_FUNNEL_PUBLIC_BASE: 'https://funnel.example' }), /token or a node allowlist/);
+    const relay = loadConfig(['funnel', 'relay', '--listen', '0.0.0.0:7443', '--tls-cert', 'cert.pem', '--tls-key', 'key.pem'], { ...env, LLMESH_FUNNEL_PUBLIC_BASE: 'https://funnel.example', LLMESH_FUNNEL_TOKEN: TOKEN });
     assert.equal(relay.port, 7443);
-    assert.throws(() => loadConfig(['serve'], { ...envFor(directory), LLMESH_FUNNEL: 'relay' }), /relay URL/);
-    assert.throws(() => loadConfig(['serve', '--listen', '0.0.0.0:7337'], envFor(directory)), /insecure-listen/);
+    assert.equal(relay.funnelToken, TOKEN);
+    assert.equal(relay.funnelOpen, false);
+    const loopback = loadConfig(['funnel', 'relay', '--listen', '127.0.0.1:7443'], env);
+    assert.equal(loopback.host, '127.0.0.1');
+    assert.equal(loopback.funnelToken, null);
+    assert.throws(() => loadConfig(['serve'], { ...env, LLMESH_FUNNEL: 'relay' }), /relay URL/);
+    assert.throws(() => loadConfig(['serve', '--listen', '0.0.0.0:7337'], env), /insecure-listen/);
+    assert.throws(() => loadConfig(['serve'], { ...env, LLMESH_FUNNEL: 'cloudflare', LLMESH_FUNNEL_PUBLIC_URL: 'https://node.example' }), /tunnel token/);
+    const named = loadConfig(['serve'], { ...env, LLMESH_FUNNEL: 'cloudflare', LLMESH_FUNNEL_PUBLIC_URL: 'https://node.example', LLMESH_FUNNEL_CLOUDFLARE_TOKEN: 'cloudflare-tunnel-token' });
+    assert.equal(named.funnelCloudflareToken, 'cloudflare-tunnel-token');
+    assert.equal(named.funnelPublicUrl, 'https://node.example');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -166,8 +177,57 @@ test('process funnel providers publish a verified URL without inheriting the API
     assert.equal((await tailscale.start()).publicUrl, 'https://desktop.tailnet.ts.net');
     assert.equal((await cloudflare.start()).state, 'verified');
     assert.equal(cloudflare.status().publicUrl, 'https://example-node.trycloudflare.com');
+    assert.equal(cloudflare.status().ephemeral, true);
     assert.equal(JSON.stringify(cloudflare.status()).includes('apiKey'), false);
   } finally { await tailscale.stop(); await cloudflare.stop(); }
+});
+
+test('a named Cloudflare tunnel keeps its hostname and leaves the token out of the process arguments', async () => {
+  const secret = generateSecretKey();
+  const pubkey = getPublicKey(secret);
+  const token = 'cloudflare-tunnel-token';
+  const calls = [];
+  const spawn = (file, args, options) => {
+    calls.push({ file, args, token: options?.env?.TUNNEL_TOKEN });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => { child.killed = true; };
+    return child;
+  };
+  const fetchImpl = async () => ({ status: 200, json: async () => ({ v: 1, protocol: FUNNEL_PROTOCOL, pubkey }) });
+  const funnel = createNodeFunnel({ provider: 'cloudflare', publicUrl: 'https://llm.example', cloudflareToken: token, secret, pubkey, apiPort: 7337, spawn, fetch: fetchImpl });
+  try {
+    const status = await funnel.start();
+    assert.equal(status.publicUrl, 'https://llm.example');
+    assert.equal(status.ephemeral, false);
+    assert.equal(status.hasCloudflareToken, true);
+    assert.equal(JSON.stringify(status).includes(token), false);
+    assert.deepEqual(calls[0].args, ['tunnel', '--no-autoupdate', 'run']);
+    assert.equal(calls[0].token, token);
+  } finally { await funnel.stop(); }
+});
+
+test('a relay sheds a session flood and an idle session', async () => {
+  const secret = generateSecretKey();
+  const relay = new FunnelRelay({ token: TOKEN });
+  await relay.listen(0, '127.0.0.1');
+  try {
+    const event = finalizeEvent({ kind: 30078, created_at: Math.floor(Date.now() / 1000), tags: [['d', 'llmesh-funnel-v1']], content: JSON.stringify({ v: 1, role: 'node', protocol: FUNNEL_PROTOCOL, nonce: 'ab'.repeat(16) }) }, secret);
+    const created = await fetch(relay.origin + '/v1/funnel/sessions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ v: 1, event }) });
+    assert.equal(created.status, 201);
+    const { publicUrl } = await created.json();
+    assert.equal((await fetch(publicUrl + '/health')).status, 503);
+    const broken = await fetch(relay.origin + '/v1/funnel/sessions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: '{' });
+    assert.equal(broken.status, 400);
+    let limited = 0;
+    for (let i = 0; i < 40; i += 1) {
+      const response = await fetch(relay.origin + '/v1/funnel/sessions', { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` }, body: '{}' });
+      if (response.status === 429) limited += 1;
+      await response.arrayBuffer();
+    }
+    assert.equal(limited > 0, true);
+  } finally { await relay.close(); }
 });
 
 test('mesh capabilities carry a verified funnel and reject a public HTTP address', async () => {

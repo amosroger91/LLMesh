@@ -11,7 +11,7 @@ export function secretEnv(name, env=process.env){return env[name+'_FILE']?readFi
 export function loadConfig(argv=process.argv.slice(2), env=process.env) {
   const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{
     config:{type:'string'},listen:{type:'string'},gpus:{type:'string'},placement:{type:'string'},parallel:{type:'string'},runtime:{type:'string'},'ollama-url':{type:'string',multiple:true},level:{type:'string'},
-    'data-dir':{type:'string'},'admin-socket':{type:'string'},'metrics-listen':{type:'string'},'tls-cert':{type:'string'},'tls-key':{type:'string'},'insecure-listen':{type:'boolean'},
+    'data-dir':{type:'string'},'admin-socket':{type:'string'},'metrics-listen':{type:'string'},'tls-cert':{type:'string'},'tls-key':{type:'string'},'insecure-listen':{type:'boolean'},'funnel-open':{type:'boolean'},
     'install-runtime':{type:'boolean'},'log-format':{type:'string'},'drain-timeout':{type:'string'},json:{type:'boolean'},offline:{type:'boolean'},version:{type:'boolean'},help:{type:'boolean'},out:{type:'string'},
     funnel:{type:'string'},'funnel-relay':{type:'string'},'funnel-public-url':{type:'string'},'funnel-public-base':{type:'string'}
   }});
@@ -33,7 +33,9 @@ export function loadConfig(argv=process.argv.slice(2), env=process.env) {
     topic:env.LLMESH_TOPIC??file.topic,allowedWorkers:list(env.LLMESH_WORKERS??file.allowedWorkers),trustedCoordinators:list(env.LLMESH_COORDINATORS??file.trustedCoordinators),energy:file.energy??{},
     funnel:pick('funnel','LLMESH_FUNNEL','funnel','off'),funnelRelay:pick('funnel-relay','LLMESH_FUNNEL_RELAY','funnelRelay',null),
     funnelPublicUrl:pick('funnel-public-url','LLMESH_FUNNEL_PUBLIC_URL','funnelPublicUrl',null),funnelPublicBase:pick('funnel-public-base','LLMESH_FUNNEL_PUBLIC_BASE','funnelPublicBase',null),
-    funnelToken:secretEnv('LLMESH_FUNNEL_TOKEN',env)||file.funnelToken||null,funnelAllow:list(env.LLMESH_FUNNEL_ALLOW??file.funnelAllow??[])
+    funnelToken:secretEnv('LLMESH_FUNNEL_TOKEN',env)||file.funnelToken||null,funnelAllow:list(env.LLMESH_FUNNEL_ALLOW??file.funnelAllow??[]),
+    funnelCloudflareToken:secretEnv('LLMESH_FUNNEL_CLOUDFLARE_TOKEN',env)||file.funnelCloudflareToken||null,
+    funnelOpen:values['funnel-open']===true||['true','1',true].includes(env.LLMESH_FUNNEL_OPEN)||['true','1',true].includes(file.funnelOpen)
   };
   if(!['low','medium','high'].includes(config.level))throw new Error('level must be low, medium, or high');
   if(!['auto','split','replicate'].includes(config.placement))throw new Error('placement must be auto, split, or replicate');
@@ -46,10 +48,11 @@ export function loadConfig(argv=process.argv.slice(2), env=process.env) {
   const address=new URL('http://'+config.listen);config.host=address.hostname.replace(/^\[|\]$/g,'');config.port=Number(address.port||80);
   const relayCommand=config.command==='funnel'&&config.args[0]==='relay';
   const loopback=['127.0.0.1','::1','localhost'].includes(config.host);
-  if(!relayCommand&&!loopback&&!(config.tlsCert&&config.tlsKey)&&![true,'true','1'].includes(config.insecureListen))throw new Error('Non-loopback listen requires tls-cert/tls-key or explicit --insecure-listen');
+  const insecure=[true,'true','1'].includes(config.insecureListen);
+  if(!loopback&&!(config.tlsCert&&config.tlsKey)&&!insecure)throw new Error('Non-loopback listen requires tls-cert/tls-key or explicit --insecure-listen');
+  if(relayCommand&&!loopback&&!config.funnelToken&&!config.funnelAllow.length&&!config.funnelOpen)throw new Error('A public funnel relay requires a token or a node allowlist. Pass --funnel-open only for a private lab.');
   if(config.funnelAllow.some(key=>!/^[a-f0-9]{64}$/.test(key)))throw new Error('Funnel allowlist entries must be 64-character node keys');
-  const funnel=funnelSettings({provider:config.funnel,relay:config.funnelRelay,publicUrl:config.funnelPublicUrl,publicBase:config.funnelPublicBase,token:config.funnelToken},{allowInsecure:[true,'true','1'].includes(config.insecureListen)});
-  config.funnel=funnel.provider;config.funnelRelay=funnel.relay;config.funnelPublicUrl=funnel.publicUrl;config.funnelPublicBase=funnel.publicBase;config.funnelToken=funnel.token;
-  config.funnelPlainRelay=relayCommand&&!loopback&&!(config.tlsCert&&config.tlsKey);
+  const funnel=funnelSettings({provider:config.funnel,relay:config.funnelRelay,publicUrl:config.funnelPublicUrl,publicBase:config.funnelPublicBase,token:config.funnelToken,cloudflareToken:config.funnelCloudflareToken},{allowInsecure:insecure});
+  config.funnel=funnel.provider;config.funnelRelay=funnel.relay;config.funnelPublicUrl=funnel.publicUrl;config.funnelPublicBase=funnel.publicBase;config.funnelToken=funnel.token;config.funnelCloudflareToken=funnel.cloudflareToken;
   return config;
 }

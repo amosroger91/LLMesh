@@ -64,7 +64,32 @@ export async function startTailscale({ apiPort, spawn: spawnImpl = spawn }) {
   };
 }
 
-export function startCloudflare({ apiPort, spawn: spawnImpl = spawn, publicUrl = null }) {
+export function startCloudflare({ apiPort, spawn: spawnImpl = spawn, publicUrl = null, token = null }) {
+  if (token) {
+    if (!publicUrl) throw new Error('A Cloudflare tunnel token requires a public URL');
+    const child = spawnImpl('cloudflared', ['tunnel', '--no-autoupdate', 'run'], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, TUNNEL_TOKEN: token }
+    });
+    const published = publicFunnelUrl(publicUrl);
+    return new Promise((resolve, reject) => {
+      const handle = { publicUrl: published, ephemeral: false, exited: null, stop: async () => { kill(child); } };
+      let settled = false;
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        if (error) { kill(child); reject(error); }
+        else resolve(value);
+      };
+      child.once?.('error', error => finish(new Error(`cloudflared failed to start: ${error.message}`)));
+      child.on?.('exit', code => {
+        handle.exited = code ?? 'unknown';
+        finish(new Error(`cloudflared exited ${handle.exited} before the tunnel was ready`));
+      });
+      setTimeout(() => finish(null, handle), 0);
+    });
+  }
   const child = spawnImpl('cloudflared', ['tunnel', '--url', `http://127.0.0.1:${apiPort}`, '--no-autoupdate'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   const discovered = new Promise((resolve, reject) => {
     let settled = false;
@@ -82,5 +107,5 @@ export function startCloudflare({ apiPort, spawn: spawnImpl = spawn, publicUrl =
     child.once?.('error', error => finish(new Error(`cloudflared failed to start: ${error.message}`)));
     child.once?.('exit', code => finish(new Error(`cloudflared exited ${code ?? 'unknown'} before publishing a URL`)));
   });
-  return discovered.then(url => ({ publicUrl: publicUrl ? publicFunnelUrl(publicUrl) : url, stop: async () => { kill(child); } }));
+  return discovered.then(url => ({ publicUrl: url, ephemeral: true, stop: async () => { kill(child); } }));
 }

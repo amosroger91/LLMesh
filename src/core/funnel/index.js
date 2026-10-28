@@ -27,15 +27,15 @@ export class Funnel extends EventEmitter {
 
   blank(state, extra = {}) {
     return {
-      provider: this.settings.provider, state, publicUrl: null, error: null, verifiedAt: null, requests: this.state?.requests ?? 0,
-      relay: this.settings.relay, hasToken: Boolean(this.settings.token), ...extra
+      provider: this.settings.provider, state, publicUrl: null, error: null, verifiedAt: null, requests: this.state?.requests ?? 0, ephemeral: false,
+      relay: this.settings.relay, hasToken: Boolean(this.settings.token), hasCloudflareToken: Boolean(this.settings.cloudflareToken), ...extra
     };
   }
 
   status() {
     return {
       ...this.state,
-      configured: { provider: this.settings.provider, relay: this.settings.relay, publicUrl: this.settings.publicUrl, hasToken: Boolean(this.settings.token) }
+      configured: { provider: this.settings.provider, relay: this.settings.relay, publicUrl: this.settings.publicUrl, hasToken: Boolean(this.settings.token), hasCloudflareToken: Boolean(this.settings.cloudflareToken) }
     };
   }
 
@@ -71,15 +71,20 @@ export class Funnel extends EventEmitter {
       this.tunnel.on('request', () => { this.state.requests += 1; });
       this.tunnel.on('close', () => this.reconnect());
       this.state.publicUrl = (await this.tunnel.open()).publicUrl;
-    } else if (this.settings.provider === 'public') this.state.publicUrl = this.settings.publicUrl;
-    else if (this.settings.provider === 'tailscale') {
+      this.state.ephemeral = false;
+    } else if (this.settings.provider === 'public') {
+      this.state.publicUrl = this.settings.publicUrl;
+      this.state.ephemeral = false;
+    } else if (this.settings.provider === 'tailscale') {
       await this.handle?.stop?.();
       this.handle = await startTailscale({ apiPort: this.api.port, spawn: this.spawn });
       this.state.publicUrl = this.handle.publicUrl;
+      this.state.ephemeral = false;
     } else {
       await this.handle?.stop?.();
-      this.handle = await startCloudflare({ apiPort: this.api.port, spawn: this.spawn, publicUrl: this.settings.publicUrl });
+      this.handle = await startCloudflare({ apiPort: this.api.port, spawn: this.spawn, publicUrl: this.settings.publicUrl, token: this.settings.cloudflareToken });
       this.state.publicUrl = this.handle.publicUrl;
+      this.state.ephemeral = Boolean(this.handle.ephemeral);
     }
     this.state.state = 'pending';
     await this.probe();
@@ -105,6 +110,13 @@ export class Funnel extends EventEmitter {
 
   async probe() {
     if (this.stopped) return this.status();
+    if (this.handle?.exited != null) {
+      this.state.state = 'pending';
+      this.state.verifiedAt = null;
+      this.state.error = `cloudflared exited ${this.handle.exited}`;
+      this.emit('change', this.status());
+      return this.status();
+    }
     if (!this.state.publicUrl) throw new Error('Funnel has no public URL');
     const url = funnelRequestUrl(this.state.publicUrl, '/.well-known/llmesh.json');
     try {
@@ -154,6 +166,7 @@ export async function funnelDoctor(config, { spawn: spawnImpl = spawn, fetch: fe
       const result = await command(spawnImpl, file, config.funnel === 'tailscale' ? ['version'] : ['--version'], 5000);
       checks.push({ name: file, ok: true, detail: (result.stdout || result.stderr).trim().slice(0, 200) });
     } catch (error) { checks.push({ name: file, ok: false, detail: error.message }); }
+    if (config.funnel === 'cloudflare' && !config.funnelCloudflareToken) checks.push({ name: 'funnel-cloudflare-hostname', ok: true, detail: 'Quick tunnel. The hostname changes when cloudflared restarts. Set LLMESH_FUNNEL_CLOUDFLARE_TOKEN and LLMESH_FUNNEL_PUBLIC_URL for a stable name.' });
   }
   if (config.funnel === 'relay') {
     if (config.offline) checks.push({ name: 'funnel-relay', ok: true, detail: 'Skipped while offline' });

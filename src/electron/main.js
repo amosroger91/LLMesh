@@ -40,22 +40,27 @@ else {
     await service.initialize();
     const funnelFile = join(directory, 'funnel.json');
     const funnelTokenFile = join(directory, 'funnel-token.enc');
+    const funnelCloudflareTokenFile = join(directory, 'funnel-cloudflare-token.enc');
     function readFunnel() {
       let file = {};
       try { if (existsSync(funnelFile)) file = JSON.parse(readFileSync(funnelFile, 'utf8')); } catch { file = {}; }
       let token = process.env.LLMESH_FUNNEL_TOKEN || null;
       if (!token && existsSync(funnelTokenFile)) token = safeStorage.decryptString(readFileSync(funnelTokenFile));
-      return { provider: process.env.LLMESH_FUNNEL || file.provider || 'off', relay: process.env.LLMESH_FUNNEL_RELAY || file.relay || '', publicUrl: process.env.LLMESH_FUNNEL_PUBLIC_URL || file.publicUrl || '', token };
+      let cloudflareToken = process.env.LLMESH_FUNNEL_CLOUDFLARE_TOKEN || null;
+      if (!cloudflareToken && process.env.LLMESH_FUNNEL_CLOUDFLARE_TOKEN_FILE) cloudflareToken = readFileSync(process.env.LLMESH_FUNNEL_CLOUDFLARE_TOKEN_FILE, 'utf8').trim();
+      if (!cloudflareToken && existsSync(funnelCloudflareTokenFile)) cloudflareToken = safeStorage.decryptString(readFileSync(funnelCloudflareTokenFile));
+      return { provider: process.env.LLMESH_FUNNEL || file.provider || 'off', relay: process.env.LLMESH_FUNNEL_RELAY || file.relay || '', publicUrl: process.env.LLMESH_FUNNEL_PUBLIC_URL || file.publicUrl || '', token, cloudflareToken };
     }
     async function applyFunnel(input = {}, persist = true) {
       const current = readFunnel();
-      const next = { provider: input.provider || current.provider || 'off', relay: input.relay ?? current.relay, publicUrl: input.publicUrl ?? current.publicUrl, token: input.token || current.token || null, allowInsecure: false, secret, pubkey: service.pubkey, apiHost: '127.0.0.1', apiPort: api.address().port };
+      const next = { provider: input.provider || current.provider || 'off', relay: input.relay ?? current.relay, publicUrl: input.publicUrl ?? current.publicUrl, token: input.token || current.token || null, cloudflareToken: input.cloudflareToken || current.cloudflareToken || null, allowInsecure: false, secret, pubkey: service.pubkey, apiHost: '127.0.0.1', apiPort: api.address().port };
       const node = createNodeFunnel(next);
       await service.funnel?.stop?.();
       service.funnel = node;
       if (persist) {
         writeFileSync(funnelFile, JSON.stringify({ provider: node.settings.provider, relay: node.settings.relay, publicUrl: node.settings.publicUrl }), { mode: 0o600 });
         if (input.token) writeFileSync(funnelTokenFile, safeStorage.encryptString(input.token));
+        if (input.cloudflareToken) writeFileSync(funnelCloudflareTokenFile, safeStorage.encryptString(input.cloudflareToken));
       }
       if (node.settings.provider !== 'off') await node.start();
       return node.status();

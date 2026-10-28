@@ -24,7 +24,7 @@ app.on('browser-window-created', (_event, window) => {
         }, 50);
       })`);
       if (result.levels !== 3 || result.modelChooser || result.socialNavigation || result.error) throw new Error(JSON.stringify(result));
-      const desktopModules=await window.webContents.executeJavaScript(`['network-map','public-network-map','public-network-count','pair-create','linked-devices','donor-list','privacy-mode','funnel-provider','funnel-status'].every(id=>Boolean(document.getElementById(id)))`);
+      const desktopModules=await window.webContents.executeJavaScript(`['network-map','public-network-map','public-network-count','pair-create','linked-devices','donor-list','privacy-mode','funnel-provider','funnel-cloudflare-token','funnel-status'].every(id=>Boolean(document.getElementById(id)))`);
       assert.equal(desktopModules,true,'Desktop is missing a current mesh module');
       await window.webContents.executeJavaScript(`(async()=>{
         const select=document.getElementById('privacy-mode');select.value='allow-third-party';select.dispatchEvent(new Event('change'));

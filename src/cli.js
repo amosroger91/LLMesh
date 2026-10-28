@@ -29,7 +29,7 @@ service.on('progress', item => console.log(JSON.stringify(item)));
 await service.initialize();
 if (process.env.LLMESH_FUNNEL && process.env.LLMESH_FUNNEL !== 'off') {
   service.funnel = createNodeFunnel({ provider: process.env.LLMESH_FUNNEL, relay: process.env.LLMESH_FUNNEL_RELAY, token: process.env.LLMESH_FUNNEL_TOKEN,
-    publicUrl: process.env.LLMESH_FUNNEL_PUBLIC_URL, publicBase: process.env.LLMESH_FUNNEL_PUBLIC_BASE, allowInsecure: process.env.LLMESH_INSECURE_LISTEN === '1',
+    cloudflareToken: process.env.LLMESH_FUNNEL_CLOUDFLARE_TOKEN, publicUrl: process.env.LLMESH_FUNNEL_PUBLIC_URL, publicBase: process.env.LLMESH_FUNNEL_PUBLIC_BASE, allowInsecure: process.env.LLMESH_INSECURE_LISTEN === '1',
     secret: Buffer.from(identity, 'hex'), pubkey: service.pubkey, apiHost: '127.0.0.1', apiPort: api.address().port });
   await service.funnel.start();
 }

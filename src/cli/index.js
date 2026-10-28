@@ -36,15 +36,16 @@ async function doctor(config){const checks=[];const add=(name,ok,detail)=>checks
     try{const status=await adminRequest(config.adminSocket,{command:'status'});add('daemon',true,{instances:status.instances,payments:status.payments?.configured,settlements:status.payments?.jobs?.filter(job=>job.state==='settle-pending').length});}catch{add('daemon',false,'No daemon at '+config.adminSocket);}
   }
   checks.push(...await funnelDoctor(config));
-  return {ok:checks.every(check=>check.ok),checks,notes:['Clock/NAT and physical multi-GPU checks require an online deployment.','No runtime is installed by doctor.','A verified funnel is the supported way to publish this API beyond loopback.']};
+  return {ok:checks.every(check=>check.ok),checks,notes:['Clock/NAT and physical multi-GPU checks require an online deployment.','No runtime is installed by doctor.','A verified funnel publishes this OpenAI-compatible API for a phone, a cloud job, or another client. Mesh jobs stay on the peer connection.']};
 }
 async function main(){const config=loadConfig();
   if(config.help){print('llmesh serve | status | gpus | models list|install|remove | group create|invite|join|members|revoke | wallet address|balance|claim|refund | keys export|import | funnel status|probe | funnel relay | doctor | --version');return;}
   if(config.command==='version'){print(version.version);return;}
   if(config.command==='funnel'&&config.args[0]==='relay'){
     const log=logger(config.logFormat);
-    if(config.funnelPlainRelay)log('warning',{message:'Funnel relay is listening without TLS. Terminate TLS at this process or at a proxy.'});
-    if(!config.funnelToken&&!config.funnelAllow.length)log('warning',{message:'Funnel relay has no token or node allowlist. Any signed node can publish through it.'});
+    const loopback=['127.0.0.1','::1','localhost'].includes(config.host);
+    if(!loopback&&!(config.tlsCert&&config.tlsKey))log('warning',{message:'Funnel relay is listening without TLS by explicit request. Terminate TLS at a proxy if this process is plain HTTP.'});
+    if(config.funnelOpen)log('warning',{message:'Funnel relay is open. Any node that can sign an announcement can publish through it.'});
     const tls=config.tlsCert&&config.tlsKey?{cert:readFileSync(config.tlsCert),key:readFileSync(config.tlsKey)}:undefined;
     const relay=new FunnelRelay({token:config.funnelToken,allow:config.funnelAllow,publicBase:config.funnelPublicBase,tls});
     await relay.listen(config.port,config.host);
@@ -92,7 +93,7 @@ async function main(){const config=loadConfig();
   const api=await startApi(service,{host:config.host,port:config.port,tls});let metrics;
   if(config.metricsListen){const url=new URL('http://'+config.metricsListen);if(!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw new Error('Metrics listener must be loopback');
     metrics=http.createServer((_req,res)=>{const instances=service.status().instances;const funnel=service.funnel?.status?.()??{provider:'off',state:'off',requests:0};const lines=['# TYPE llmesh_slots_busy gauge',...instances.map(instance=>`llmesh_slots_busy{instance="${instance.id}"} ${instance.inFlight??0}`),...instances.map(instance=>`llmesh_tokens_per_second{instance="${instance.id}"} ${instance.metrics?.tokensPerSecond??0}`),`llmesh_settlement_pending ${service.ledger.db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE state='settle-pending'").get().count}`,'# TYPE llmesh_funnel_up gauge',`llmesh_funnel_up{provider="${funnel.provider??'off'}"} ${funnel.state==='verified'||funnel.state==='pending'?1:0}`,'# TYPE llmesh_funnel_verified gauge',`llmesh_funnel_verified ${funnel.state==='verified'?1:0}`,'# TYPE llmesh_funnel_requests counter',`llmesh_funnel_requests ${Number(funnel.requests)||0}`];res.end(lines.join('\n')+'\n');});metrics.listen(Number(url.port),url.hostname);}
-  service.funnel=createNodeFunnel({provider:config.funnel,relay:config.funnelRelay,token:config.funnelToken,publicUrl:config.funnelPublicUrl,publicBase:config.funnelPublicBase,allowInsecure:[true,'true','1'].includes(config.insecureListen),secret,pubkey:service.pubkey,apiHost:'127.0.0.1',apiPort:api.address().port,tls:Boolean(tls)});
+  service.funnel=createNodeFunnel({provider:config.funnel,relay:config.funnelRelay,token:config.funnelToken,cloudflareToken:config.funnelCloudflareToken,publicUrl:config.funnelPublicUrl,publicBase:config.funnelPublicBase,allowInsecure:[true,'true','1'].includes(config.insecureListen),secret,pubkey:service.pubkey,apiHost:'127.0.0.1',apiPort:api.address().port,tls:Boolean(tls)});
   if(config.funnel!=='off'){await service.funnel.start();log('funnel',service.funnel.status());}
   const saveGroup=()=>writeFileSync(join(config.dataDir,'group.json'),JSON.stringify(group,null,2),{mode:0o600});
   const reload=async()=>{const next=loadConfig();if(Object.keys(next.energy).length)service.energy.configure(next.energy);

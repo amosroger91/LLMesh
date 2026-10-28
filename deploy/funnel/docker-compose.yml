@@ -1,17 +1,22 @@
-# LLMesh funnel relay. Set a public base and a token before publishing it.
+# LLMesh funnel relay. Publish the OpenAI-compatible API for phones and cloud clients.
+# Required:
 #   LLMESH_FUNNEL_PUBLIC_BASE=https://funnel.example
 #   LLMESH_FUNNEL_TOKEN=<16 or more random characters>
+#   LLMESH_FUNNEL_CERT=./funnel.crt
+#   LLMESH_FUNNEL_KEY=./funnel.key
 services:
   relay:
     image: node:24-bookworm-slim
     working_dir: /opt/llmesh
-    command: ["node", "src/cli/index.js", "funnel", "relay", "--listen", "0.0.0.0:7443"]
+    command: ["node", "src/cli/index.js", "funnel", "relay", "--listen", "0.0.0.0:7443", "--tls-cert", "/etc/llmesh/funnel.crt", "--tls-key", "/etc/llmesh/funnel.key"]
     volumes:
       - ../..:/opt/llmesh:ro
+      - ${LLMESH_FUNNEL_CERT:?Set LLMESH_FUNNEL_CERT to the PEM certificate}:/etc/llmesh/funnel.crt:ro
+      - ${LLMESH_FUNNEL_KEY:?Set LLMESH_FUNNEL_KEY to the PEM private key}:/etc/llmesh/funnel.key:ro
     ports:
       - "7443:7443"
     environment:
-      LLMESH_FUNNEL_PUBLIC_BASE: ${LLMESH_FUNNEL_PUBLIC_BASE:-http://127.0.0.1:7443}
-      LLMESH_FUNNEL_TOKEN: ${LLMESH_FUNNEL_TOKEN:-}
+      LLMESH_FUNNEL_PUBLIC_BASE: ${LLMESH_FUNNEL_PUBLIC_BASE:?Set the public https origin}
+      LLMESH_FUNNEL_TOKEN: ${LLMESH_FUNNEL_TOKEN:?Set a relay token of 16 or more characters}
       LLMESH_FUNNEL_ALLOW: ${LLMESH_FUNNEL_ALLOW:-}
     restart: unless-stopped

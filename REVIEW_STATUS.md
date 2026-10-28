@@ -37,7 +37,7 @@ Remaining roadmap work includes audited payment channels, group PKI, broader ret
 
 ## Internet funnel
 
-LLMesh Funnel v1 publishes the existing authenticated API. Providers are `relay` (the standard outbound tunnel), `tailscale`, `cloudflare`, and `public`. The default is off. A public URL is advertised to trusted peers only after `/.well-known/llmesh.json` returns this node's key. The relay protocol, CLI, desktop controls, Prometheus gauges, deployment examples, and tests are in the tree. Mesh job dispatch still uses the encrypted Hyperswarm connection. This project does not operate a hosted relay.
+LLMesh Funnel v1 publishes the existing authenticated OpenAI-compatible API for a phone, a cloud job, or any other client. Providers are `relay` (the standard outbound tunnel), `tailscale`, `cloudflare` (named tunnel or quick tunnel), and `public`. The default is off. A public URL is advertised to trusted peers only after `/.well-known/llmesh.json` returns this node's key. A relay bound outside loopback requires TLS, or explicit `--insecure-listen`, and a token or node allowlist, or explicit `--funnel-open`. The relay protocol, CLI, desktop controls, Prometheus gauges, deployment examples, and tests are in the tree. Mesh job dispatch stays on the encrypted Hyperswarm connection by design. This project does not operate a hosted relay. Payments, group PKI, the Rust daemon, Android, and the installer matrix remain separate tracks.
 
 ## Branding
 

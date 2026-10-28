@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "main": "src/electron/main.js",
-  "description": "Hardware-aware Qwen inference over an encrypted peer mesh, with an opt-in internet funnel",
+  "description": "Hardware-aware Qwen inference over an encrypted peer mesh, with an opt-in public OpenAI-compatible API",
   "scripts": {
     "build:ui": "node scripts/build-ui.js",
     "contracts:compile": "node scripts/compile-contracts.js",

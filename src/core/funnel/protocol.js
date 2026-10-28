@@ -174,7 +174,11 @@ export function funnelSettings(input = {}, { allowInsecure = false } = {}) {
   if (provider === 'public' && !publicUrl) throw new Error('Public funnel requires a public URL');
   const token = input.token == null || input.token === '' ? null : String(input.token);
   if (token && (token.length < 16 || token.length > 256 || /[\r\n]/.test(token))) throw new Error('Funnel token must be 16–256 characters without line breaks');
-  return { provider, relay, publicUrl, publicBase, token, allowInsecure: Boolean(allowInsecure) };
+  const cloudflareToken = input.cloudflareToken == null || input.cloudflareToken === '' ? null : String(input.cloudflareToken);
+  if (cloudflareToken && (cloudflareToken.length < 16 || cloudflareToken.length > 4096 || /[\r\n]/.test(cloudflareToken))) throw new Error('Cloudflare tunnel token must be 16–4096 characters without line breaks');
+  if (provider === 'cloudflare' && publicUrl && !cloudflareToken) throw new Error('A stable Cloudflare hostname requires a tunnel token');
+  if (provider === 'cloudflare' && cloudflareToken && !publicUrl) throw new Error('A Cloudflare tunnel token requires a public URL');
+  return { provider, relay, publicUrl, publicBase, token, cloudflareToken, allowInsecure: Boolean(allowInsecure) };
 }
 
 export function nodeManifest(service) {

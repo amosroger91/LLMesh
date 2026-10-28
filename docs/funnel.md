@@ -1,6 +1,6 @@
 # LLMesh Funnel v1
 
-A funnel publishes a node's existing API on the internet. It does not create a second API, and it does not replace the encrypted peer mesh.
+A funnel publishes a node's existing OpenAI-compatible API on the internet. Use it from a phone, a cloud job, or any other client that speaks that API. It does not create a second API. Mesh job dispatch stays on the encrypted peer connection.
 
 The local listener stays on loopback unless an operator deliberately binds a public address. The funnel puts a public HTTPS URL in front of that listener. Callers still present the node's API key or a NIP-98 signature. Browser pages remain blocked.
 
@@ -11,7 +11,7 @@ The local listener stays on loopback unless an operator deliberately binds a pub
 | `off` | Default. Nothing is published. |
 | `relay` | The node dials out to an LLMesh funnel relay. This is the standard the other providers also satisfy: a verified public base URL. |
 | `tailscale` | Runs `tailscale funnel` for the loopback port and reads `tailscale funnel status --json`. |
-| `cloudflare` | Runs `cloudflared tunnel --url http://127.0.0.1:<port>` and accepts only an `https://*.trycloudflare.com` URL, unless the operator sets an explicit public URL for a named tunnel. |
+| `cloudflare` | A named tunnel keeps a stable hostname. Set `LLMESH_FUNNEL_PUBLIC_URL` and `LLMESH_FUNNEL_CLOUDFLARE_TOKEN` (or `LLMESH_FUNNEL_CLOUDFLARE_TOKEN_FILE`). The token is passed to `cloudflared` as `TUNNEL_TOKEN` and is omitted from the process arguments. With no token, `cloudflared tunnel --url` opens a quick tunnel whose `*.trycloudflare.com` hostname changes on restart. |
 | `public` | Records an API that is already on a public HTTPS URL. |
 
 `LLMESH_FUNNEL` selects the provider. A node advertises the URL to trusted peers only after `GET <public>/.well-known/llmesh.json` returns this node's key.
@@ -26,7 +26,7 @@ $env:LLMESH_FUNNEL_TOKEN = '<16 or more random characters>'
 node src/cli/index.js funnel relay --listen 127.0.0.1:7443 --tls-cert cert.pem --tls-key key.pem
 ```
 
-`LLMESH_FUNNEL_PUBLIC_BASE` is the origin printed to nodes. Set it to the name clients use, not the relay's private bind address. Terminate TLS on the relay or at a proxy in front of it. Set a token, a node allowlist (`LLMESH_FUNNEL_ALLOW`, comma-separated node keys), or both. Without either, any node that can sign an announcement can publish through the relay.
+`LLMESH_FUNNEL_PUBLIC_BASE` is the origin printed to nodes. Set it to the name clients use, not the relay's private bind address. A relay bound outside loopback requires a TLS certificate and key, or an explicit `--insecure-listen` when a proxy terminates TLS. It also requires a token, a node allowlist (`LLMESH_FUNNEL_ALLOW`, comma-separated node keys), or both. `--funnel-open` is the explicit switch for a private lab relay with neither control. A loopback relay can stay open for local development.
 
 A container and a systemd unit live in `deploy/funnel/`.
 
@@ -70,6 +70,28 @@ The node forwards only `authorization`, `content-type`, and `accept`. It adds `x
 
 Public traffic uses `<publicUrl>` plus the API path. `https://funnel.example/f/<session>/v1` is the OpenAI base URL.
 
+## Call it from a phone or a cloud job
+
+Point the client at the verified public URL plus `/v1`. Send the same API key you use on loopback. A NIP-98 client signs the public URL.
+
+```powershell
+curl https://funnel.example/f/<session>/v1/chat/completions `
+  -H "Authorization: Bearer <api-key>" `
+  -H "Content-Type: application/json" `
+  -d '{"model":"llmesh-auto","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+  base_url="https://funnel.example/f/<session>/v1",
+  api_key="<the node API key>"
+)
+```
+
+`GET <publicUrl>/openapi.json` describes the same API. Copy the public URL only after the node reports it verified. A quick Cloudflare hostname is valid until `cloudflared` restarts. A named tunnel, Tailscale Funnel, an LLMesh relay, or an existing HTTPS address keeps a stable base URL.
+
 ## Identity document
 
 `GET /.well-known/llmesh.json` is unauthenticated and contains no key, wallet, topic, or prompt:
@@ -83,6 +105,7 @@ NIP-98 signatures through a funnel bind the public URL, not the loopback URL. Th
 ## What a funnel does not do
 
 - It does not publish the API key or accept browser origins.
-- It does not move mesh jobs off the Noise-encrypted peer connection. Peers learn the verified URL so operators and API clients can reach the node when hole punching fails.
+- Mesh job dispatch stays on the Noise-encrypted peer connection. The funnel is how a phone, a cloud job, or another OpenAI client reaches this node's API.
+- Trusted peers learn the verified URL after the reachability check. That advertisement carries the API address, not a job transport.
 - It does not turn a Tailscale or Cloudflare process on unless that provider is selected. Stopping a Tailscale funnel turns off the mapping LLMesh created for this port. It does not reset every serve configuration on the machine.
-- It does not make an open relay safe. Use a token and an allowlist.
+- A public relay stays closed until it has TLS (or `--insecure-listen`) and a token or allowlist (or `--funnel-open`).
