@@ -26,6 +26,8 @@ app.on('browser-window-created', (_event, window) => {
       if (result.levels !== 3 || result.modelChooser || result.socialNavigation || result.error) throw new Error(JSON.stringify(result));
       const desktopModules=await window.webContents.executeJavaScript(`['network-map','public-network-map','public-network-count','pair-create','linked-devices','donor-list','privacy-mode','funnel-provider','funnel-cloudflare-token','funnel-status'].every(id=>Boolean(document.getElementById(id)))`);
       assert.equal(desktopModules,true,'Desktop is missing a current mesh module');
+      const aliveMap=await window.webContents.executeJavaScript(`(()=>{document.querySelector('[data-view="network"]').click();const known=document.querySelector('#network-map canvas.alive-map'),open=document.querySelector('#public-network-map canvas.alive-map');return {known:known?.dataset.drawn==='1',open:open?.dataset.drawn==='1'};})()`);
+      assert.equal(aliveMap.known&&aliveMap.open,true,'Desktop network maps are not the living canvas');
       await window.webContents.executeJavaScript(`(async()=>{
         const select=document.getElementById('privacy-mode');select.value='allow-third-party';select.dispatchEvent(new Event('change'));
         for(let i=0;i<50;i++){if((await window.llmesh.status()).inferencePrivacy==='allow-third-party')break;await new Promise(resolve=>setTimeout(resolve,20));}
