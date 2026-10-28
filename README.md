@@ -464,3 +464,5 @@ A free-credit coordinator immediately credits its selected worker in **that coor
 Current decisions, goals, progress, and blockers are recorded in [WORK_LOG.md](WORK_LOG.md). Agents sharing this checkout introduce themselves and coordinate active edits in [AGENT_COORDINATION.md](AGENT_COORDINATION.md), including incomplete work and current test failures.
 
 **Distributed-model proposal:** [PLAN_DISTRIBUTED_MODELS.md](PLAN_DISTRIBUTED_MODELS.md) records the pending Codex/Grok implementation plan for an optional Petals backend. This is planned work, including an explicit Qwen compatibility milestone; it is not an already available model-sharding feature.
+
+Agent implementation ownership, current handoffs, and distributed-model work assignments are recorded in [AGENT_COORDINATION.md](AGENT_COORDINATION.md); decisions and verification progress are tracked in [WORK_LOG.md](WORK_LOG.md). The Petals planner and compatibility work are experimental and do not yet establish real cross-device model execution.

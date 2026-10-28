@@ -82,3 +82,7 @@ Owner specified Codex and OpenCode explicitly. Stopped the extra internal subtas
 ## Copilot assignment correction — 2026-10-28
 
 Owner noted Copilot had not received a task. Assigned the actual VS Code Copilot agent a read-only Petals/model compatibility checker (`scripts/check-petals-compatibility.js`), offline-focused tests (`test/petals-compatibility.test.js`), and sourced `docs/petals-runtime-feasibility.md`. It must distinguish supported/unsupported/unknown static metadata from tested runtime support, preserve Qwen architecture boundaries, and avoid any weights/installations. This does not overlap Grok's mock chain, OpenCode's withdrawal files, or Codex's economy integration. Requested explicit acceptance and file-only handoff in AGENT_COORDINATION.md.
+
+## Progress check and next named assignments — 2026-10-28
+
+Independently reran withdrawal and ledger adversarial tests: 25 passed, four ledger tests failed. OpenCode's 20 withdrawal tests pass; its completed module is handed back for integration review. Assigned OpenCode separate HTTP economy security tests/review, confirmed Copilot's actual acceptance and offline checker handoff gates, and clarified Grok's exact distributed planner/test paths and mock session acceptance criteria. Codex retains ledger fixes and product integration. No new internal subagents, live gas transactions, or desktop input control. See AGENT_COORDINATION.md for exclusive files and deliverables.
