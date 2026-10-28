@@ -11,7 +11,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 export function instanceEnvironment(instance, cache, hardware) {
   const ids = instance.gpus.map(uuid => hardware.gpus.find(gpu => (gpu.uuid ?? `gpu-${gpu.index}`) === uuid)).filter(Boolean);
   const env = { OLLAMA_HOST: `127.0.0.1:${instance.port}`, OLLAMA_MODELS: cache, OLLAMA_NUM_PARALLEL: String(instance.parallel),
-    OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_KEEP_ALIVE: instance.keepAlive, OLLAMA_SCHED_SPREAD: instance.mode === 'split' ? '1' : '0', OLLAMA_NO_CLOUD: '1', OLLAMA_CONTEXT_LENGTH: '4096' };
+    OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_KEEP_ALIVE: String(instance.keepAlive), OLLAMA_SCHED_SPREAD: instance.mode === 'split' ? '1' : '0', OLLAMA_NO_CLOUD: '1', OLLAMA_CONTEXT_LENGTH: '4096' };
   if (instance.backend === 'cuda') { env.CUDA_VISIBLE_DEVICES = ids.map(gpu=>gpu.uuid).join(','); env.ROCR_VISIBLE_DEVICES = '-1'; env.GGML_VK_VISIBLE_DEVICES = '-1'; }
   else if (instance.backend === 'rocm') {
     env.ROCR_VISIBLE_DEVICES = ids.map(gpu=>gpu.runtimeId ?? gpu.index).join(','); env.HIP_VISIBLE_DEVICES = env.ROCR_VISIBLE_DEVICES;

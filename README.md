@@ -81,7 +81,9 @@ The [catalog](models/catalog.json) supplies these choices:
 | --- | ---: | ---: |
 | Qwen3.5 0.8B | 1.3 GB | 2 GB |
 | Qwen3.5 2B | 3.1 GB | 5 GB |
+| Qwen3.5 2B Q4_K_M | 1.9 GB | 3.5 GB |
 | Qwen3.5 4B | 4 GB | 6 GB |
+| Qwen3.5 4B Q4_K_M · desktop minimum | 3.3 GB | 4.8 GB |
 | Qwen3.5 9B | 7.6 GB | 10 GB |
 | Qwen3.8 27B | 18 GB | 22 GB |
 
@@ -413,6 +415,12 @@ Desktop AI Companion includes **Clear chat**, which removes the displayed conver
 
 **Desktop chat:** streamed responses always follow the latest text. `<think>` blocks appear in collapsed Model reasoning sections; empty blocks and raw tag delimiters stay out of the displayed answer, including when tags cross stream chunks. Previously generated reasoning is excluded from the next model request. Clear chat removes the conversation as before.
 
-**Manual memory override:** after automatic setup fails, choose **Attempt load despite low memory**. This one-time attempt plans from total installed RAM/VRAM instead of currently free memory, keeping physical-capacity and contribution-level limits. It does not persist the override or interrupt active work. The runtime still has final authority: loading may fail or use paging, and an unsuccessful model is never advertised as ready.
+**Manual memory retry:** after setup fails, choose **Attempt load despite low memory** to retry. Electron desktop setup now uses total installed RAM/VRAM automatically on every launch, keeping physical-capacity limits and the 4B desktop minimum. Retrying does not interrupt active work. The runtime still has final authority: loading may fail or use paging, and an unsuccessful model is never advertised as ready.
 
 Node status rings now use **green = ready**, **yellow + animated spinner = running**, **blue = external API**, and **red = unavailable, disabled or memory blocked**. Your profile ring stays separate. Disconnected sessions remain hidden from the graph rather than becoming stale red nodes.
+
+**Desktop baseline and residency:** Electron desktop setup now starts at **Qwen3.5 4B Q4_K_M**, including Low contribution. Medium and High can select larger models where total hardware capacity allows. The 2B Q4_K_M variant is also in the API catalog, while automatic desktop placement never falls back below 4B; browser workers retain their separate 0.8B model. Desktop planning ignores currently free RAM/VRAM and attempts the load using total installed capacity, retaining the physical RAM requirement and runtime reserve. Low retains its lower CPU thread share but uses at least the Medium memory fraction so its baseline can actually load. Ollama remains the final allocation authority: failed loads are shown as failures and are not advertised as ready.
+
+Desktop warmup, inference and managed-runtime configuration request **keep_alive = -1** so the selected model stays resident without an idle timeout. Leaving LLMesh running retains the model; exiting LLMesh, changing contribution, runtime restart or another application evicting a model can still unload it. This policy applies to Electron desktop nodes; the headless/Rust shared placement defaults remain unchanged. The new explicit quantized variants are separate catalog entries with the same capability ranks as their original parameter sizes. Their memory budgets are estimates for the current 4K native context, not a claim that OpenCode's larger-context requirements are solved.
+
+Sources: [Ollama 2B Q4_K_M](https://ollama.com/library/qwen3.5:2b-q4_K_M), [Ollama 4B Q4_K_M](https://ollama.com/library/qwen3.5:4b-q4_K_M), [Ollama residency settings](https://docs.ollama.com/faq).

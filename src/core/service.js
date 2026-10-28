@@ -1,3 +1,4 @@
+import {DESKTOP_PLACEMENT} from './catalog.js';
 import {recordInference} from '../shared/inference-metrics.js';
 import {memoryFailure} from '../shared/memory-status.js';
 import {nodeProfile} from '../shared/node-profile.js';
@@ -23,9 +24,9 @@ import { validateJob } from './chat-request.js';
 export { validateJob } from './chat-request.js';
 
 export class Service extends EventEmitter {
-  constructor({ directory, secret, apiKey = randomBytes(32).toString('hex'), topic, allowedWorkers = [], trustedCoordinators = [], network = true, ollama, runtime = {}, placement = {}, payments, requirePayments = true }) {
+  constructor({ desktop = Boolean(process.versions.electron), directory, secret, apiKey = randomBytes(32).toString('hex'), topic, allowedWorkers = [], trustedCoordinators = [], network = true, ollama, runtime = {}, placement = {}, payments, requirePayments = true }) {
     super(); mkdirSync(directory, { recursive: true });
-    this.pubkey = getPublicKey(secret); this.apiKey = apiKey; this.ollama = ollama ?? new OllamaPool(runtime); this.pool = this.ollama instanceof OllamaPool; this.placementOptions = placement; this.instanceMetrics = {}; this.busy = 0; this.ready = []; this.installing = false;
+    this.desktop=desktop;this.pubkey = getPublicKey(secret); this.apiKey = apiKey; this.ollama = ollama ?? new OllamaPool(runtime); this.pool = this.ollama instanceof OllamaPool; this.placementOptions = placement; this.instanceMetrics = {}; this.busy = 0; this.ready = []; this.installing = false;
     this.ledger = new Ledger(join(directory, 'ledger.sqlite'));
     this.energy = new EnergyMeter(join(directory, 'energy.sqlite')); this.payments = payments; this.requirePayments = requirePayments;
     this.providers = new ProviderPool(this.ledger.db); this.browserWorkers = new BrowserWorkers(); this.paymentJobs = new Set();
@@ -101,7 +102,7 @@ export class Service extends EventEmitter {
   }
   async scanHardware(level = this.contributionLevel, options = {}) {
     this.hardware = await detectHardware(); this.recommendation = recommend(this.hardware);
-    this.proposedProfile = chooseContribution(this.hardware, level, {...this.placementOptions,...options}); return this.proposedProfile;
+    this.proposedProfile = chooseContribution(this.hardware, level, {...this.placementOptions,...options,...(this.desktop?DESKTOP_PLACEMENT:{})}); return this.proposedProfile;
   }
   nativeSlots() {
     if (this.pool) return this.ollama.snapshot().map(instance=>({id:instance.id,model:instance.model,total:instance.slots,free:this.draining||this.installing?0:instance.free,firstTokenMs:instance.metrics.firstTokenMs,tokensPerSecond:instance.metrics.tokensPerSecond}));
