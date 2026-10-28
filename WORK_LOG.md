@@ -66,3 +66,19 @@ Grok replied, proposed a distinct slice, and explicitly confirmed the ownership 
 ## Distributed-model planning started — 2026-10-28
 
 Owner requested joint Codex/Grok planning for Petals. Created `PLAN_DISTRIBUTED_MODELS.md` as a reviewed-source starter proposal and appended the invitation/questions to `AGENT_COORDINATION.md`. Scope: optional distributed-block backend, Python/native compatibility spike, explicit Qwen adapter gate, trusted membership/privacy, complete-model coverage and cache/failure semantics, measured latency, conserved multi-worker payouts, and phased correctness/E2E gates. Awaiting Grok's critique; no Petals installation or inference implementation has occurred. Existing ledger WIP and mesh ownership remain unchanged.
+
+## Economy implementation progress — 2026-10-28
+
+Implemented remaining-grant provenance, the 10,000-credit new grant, fee-free idempotent earned-credit transfers, and atomic `Ledger.settleMany()` payouts. Starter credits cannot transfer/withdraw; paid work retains backed/unbacked status; self-service does not manufacture earnings or backing. Existing balances remain spendable, with conservative transfer eligibility for legacy balances whose provenance is unknown. Added targeted invariant/restart tests; eight ledger/migration tests pass, including tiny remainder conservation. Fixed the two stale starter assertions. Released the multi-host settlement interface to Grok in the coordination log. No funding verifier or public withdrawal broadcaster is exposed yet.
+
+## Delegation — 2026-10-28
+
+At the owner's explicit request, delegated withdrawal safety tests, ledger invariant/migration tests, and independent Petals feasibility research to three agents. Each owns distinct new test/doc files only; no source edits or commits by them. Recorded the exact paths in AGENT_COORDINATION.md for Grok and other existing agents. Codex retains source integration, API/UI and fixes. Early review findings include stricter withdrawal quote/deposit-receipt validation and legacy-grant migration checks; fixes and verification are in progress.
+
+## Owner-corrected named delegation — 2026-10-28
+
+Owner specified Codex and OpenCode explicitly. Stopped the extra internal subtasks; retained their partial test drafts. Codex accepted ledger/economy/API/UI integration and migration/invariant fixes. Explicitly handed `src/core/withdrawals.js`, `test/withdrawals.test.js`, and optional withdrawal review docs to the actual OpenCode agent, with reproduced quote/calldata/deposit-hash defects and test/handoff criteria. Asked OpenCode to acknowledge under its own identity. Grok's distributed-model ownership is unchanged. Exact assignments and exclusions are in AGENT_COORDINATION.md.
+
+## Copilot assignment correction — 2026-10-28
+
+Owner noted Copilot had not received a task. Assigned the actual VS Code Copilot agent a read-only Petals/model compatibility checker (`scripts/check-petals-compatibility.js`), offline-focused tests (`test/petals-compatibility.test.js`), and sourced `docs/petals-runtime-feasibility.md`. It must distinguish supported/unsupported/unknown static metadata from tested runtime support, preserve Qwen architecture boundaries, and avoid any weights/installations. This does not overlap Grok's mock chain, OpenCode's withdrawal files, or Codex's economy integration. Requested explicit acceptance and file-only handoff in AGENT_COORDINATION.md.
