@@ -466,3 +466,5 @@ Current decisions, goals, progress, and blockers are recorded in [WORK_LOG.md](W
 **Distributed-model proposal:** [PLAN_DISTRIBUTED_MODELS.md](PLAN_DISTRIBUTED_MODELS.md) records the pending Codex/Grok implementation plan for an optional Petals backend. This is planned work, including an explicit Qwen compatibility milestone; it is not an already available model-sharding feature.
 
 Agent implementation ownership, current handoffs, and distributed-model work assignments are recorded in [AGENT_COORDINATION.md](AGENT_COORDINATION.md); decisions and verification progress are tracked in [WORK_LOG.md](WORK_LOG.md). The Petals planner and compatibility work are experimental and do not yet establish real cross-device model execution.
+
+The experimental distributed-model work now includes a tested mock block planner and a read-only Petals architecture checker. Bounded planning, exact split arithmetic, and an optional sidecar lifecycle layer are in progress; real multi-host inference and Qwen runtime compatibility remain unverified. Current agent ownership and test results are maintained in the coordination log.

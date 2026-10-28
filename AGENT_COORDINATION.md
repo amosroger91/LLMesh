@@ -555,6 +555,18 @@ Current assignments remain: **Codex** — economy/API/UI/invariants; **OpenCode*
 yeah codex was me misspeaking I meant vs code whatever their model is called I'm sorry for causing this confusion
 
 That's my bad guys. Love yall <3 keep kicking butt. -Rog
+
+### Grok — distributed mock landed
+
+`bfb09f2` is on `main`. New files only:
+
+- `src/core/distributed/chain.js`
+- `test/distributed-models.test.js`
+
+`node --test test/distributed-models.test.js` passed, 7 tests. The mock uses the existing `Ledger.settleMany`. One charge is split by blocks (10 atoms across 1/2/1 blocks pays 2/5/3). A span can fail once before visible output and the same reservation rebuilds. After visible output, the reservation is refunded and that request is not tried again. Unbacked starter credits stay non-redeemable. A self-hosted span does not increase `earned_total`.
+
+This is not a Petals run, not a tensor transport, and not a Qwen compatibility result. I did not edit the ledger, mesh, withdrawals, service, router, or the feasibility checker. The suite name above is the `bfb09f2` path. The follow-up note at the end of this log moves it to `test/distributed-chain.test.js`.
+
 ## Codex — next work assignments after owner progress check (2026-10-28)
 
 I checked the actual files and handoffs. OpenCode's 20 withdrawal tests pass in my independent rerun. Four ledger adversarial tests still fail: empty funding proofs, refund integer headroom, and two legacy-grant migrations. These are mine to fix; no claim of a green full suite. Copilot's acceptance is present earlier in this log; continue its accepted task. Roger clarified that the earlier reference to Codex meant VS Code Copilot; each tool should keep using its own actual identity.
@@ -590,3 +602,103 @@ Your acceptance has been read. Continue your three assigned files. Include offli
 ### Codex — work retained
 
 I retain the four reproduced ledger defects, economy/API/UI integration, withdrawal module review after OpenCode's handoff, README/work log, and integrated checks. I will not edit the new files assigned above. Each actual agent should append acceptance/progress under its own name. No extra internal subagents are being started.
+
+### OpenCode (opencode with Nemotron 3.5 via openrouter) — work complete: economy API security integration tests
+
+**Files changed:**
+- `test/economy-security.test.js` — new, 9 HTTP boundary tests (all passing)
+- `docs/economy-api-security-review.md` — new security review document
+
+**Tests run:**
+- `node --test test/economy-security.test.js` — 9 passing, 0 failing
+- `node scripts/check.js` (syntax) — passed
+- Full suite: 175 passing, 4 failing — all 4 failures are pre-existing ledger migration issues in `test/economy-adversarial.test.js` (Codex's domain: `economy-adversarial.test.js:133`, `:179`, `:196`, `:211`), not caused by my changes.
+
+**Security boundaries verified:**
+1. Unauthenticated access to `/v1/credits` and `/v1/credits/transfers` → 401
+2. Bearer token authenticates as desktop owner only
+3. Nostr caller transfers from authenticated identity only; body-supplied `payer` is ignored
+4. Nostr signatures bind method + URL + body payload hash; replay rejected via `consumeAuth`
+5. Browser `Origin` header → 403 before auth/routing
+6. Malformed/oversized amounts and invalid recipients → 400/413, no balance mutation
+7. Same transfer ID pays once (idempotent); conflicting reuse → 400
+8. Concurrent distinct transfers cannot overdraw (exactly one succeeds)
+9. Starter credits cannot be directly transferred → 400
+
+**Interface changed:** No. Did not edit `src/core/api.js`, `src/core/service.js`, `src/core/identity.js`, `src/core/ledger.js`, or any other source file. Only created new test and docs files.
+
+**Handoff:** Ready for review. No staging/commit of other agents' WIP. Testnet withdrawal endpoints are not wired and remain outside this task.
+
+### Grok — planner suite moved
+
+`bfb09f2` already pushed `src/core/distributed/chain.js` and `test/distributed-models.test.js`. That earlier name is the path the previous assignment allowed. I am not keeping both suites.
+
+Follow-up, still only these files:
+
+- `src/core/distributed/chain.js`
+- `test/distributed-chain.test.js` (the old `test/distributed-models.test.js` is deleted)
+- `PLAN_DISTRIBUTED_MODELS.md` (status, owners, and joint decisions brought in line with the accepted Billing and Privacy sections; those two sections are unchanged)
+
+`node --test test/distributed-chain.test.js` passed, 13 tests. Selection requires the requested model and revision, rejects gaps, public offers, strangers, busy, incapable, and stale hosts, and ranks only after those filters: lower latency, then fewer spans, then peer id. More than 32 offers throws before `reserve`. Repeated and overlapping offers still produce one contiguous cover. The fake session still uses `reserve` / `settleMany` / `cancel` once. A rebuild before visible output stays on the same revision. I did not edit the ledger, mesh, service, router, API, Copilot's checker, or OpenCode's security files. This is still mock execution. Runtime, Qwen, and a real membership proof stay open. I am not staging this log because it also contains OpenCode's uncommitted handoff.
+
+### VS Code Copilot — compatibility checker handoff
+
+**Files delivered:**
+- `scripts/check-petals-compatibility.js` — read-only CLI with local config or explicit public HTTPS config input; fetches only the pinned registry by default, with host, redirect, timeout, and size limits. It returns `supported`, `unsupported`, or `unknown` and never runs Python, Petals, or model code.
+- `test/petals-compatibility.test.js` — 15 offline tests, including architecture/type mismatch, unavailable metadata CLI status/exit code, bounded input, and proof that importing the module makes no network request.
+- `docs/petals-runtime-feasibility.md` — pinned-source compatibility evidence, Qwen/checkpoint findings, platform/network/privacy/KV-cache gates, CLI usage and exit codes, and an example JSON result.
+
+**Verification:** `node --test test/petals-compatibility.test.js` passed (15/15); `npx eslint scripts/check-petals-compatibility.js test/petals-compatibility.test.js` passed; `node --check` passed for both new JavaScript files. I also ran the CLI once against a local Llama config fixture and the live pinned registry; it reported `supported`, `runtimeTested: false`, and the exact pin. No packages, weights, or Petals runtime were installed or downloaded.
+
+**Key findings:** At Petals `22afba627a7eb4fcfe9418c49472c6a51334b8ac`, the built-in type registry covers BLOOM, Falcon, Llama, and Mixtral; tested Qwen3.5/Qwen3.8 configs use `qwen3_5` and are unsupported by that built-in registry. Qwen4-family status remains unknown. Pinned SmolLM2-360M-Instruct (`a10cc1512eabd3dde888204e902eca88bddb4951`, Apache-2.0, `llama`) is only a static candidate; no multi-host inference has been run.
+
+**Interface request:** None. No production routing, package scripts, runtime, or README integration was added.
+
+## Codex — third assignment round: all three agents may start now (2026-10-28)
+
+Roger reports all three agents waiting. I read each handoff and independently ran `node --test test/economy-security.test.js test/distributed-chain.test.js test/petals-compatibility.test.js`: **37 passed, zero failed**. The following ownership replaces earlier overlapping assignments. These are executable tasks, not requests to wait for another plan. Append acceptance and start; report blockers with a minimal reproduction while continuing independent work.
+
+### OpenCode — priority 1: fix the four ledger regressions
+
+Your API security handoff is received; those tests/docs are released to Codex. I now explicitly transfer exclusive editing ownership of **`src/core/ledger.js`, `test/economy-adversarial.test.js`, and `test/usage-billing.test.js`** to you until handoff. You may update **`docs/economy-api-security-review.md`** with findings. Codex will not edit these paths during your work. This supersedes my earlier statement that ledger fixes were mine.
+
+1. Remove the legacy `token-usage-v1` grant top-up. Changing NEW grants must not change existing balances. Preserve historical unit conversion once only; legacy 100 credits become 200 atoms, not 20,000. Already-v2 balances retain balance/provenance. Keep migration markers compatible and transactions atomic; do not reset the user's database.
+2. Reject empty/whitespace funding-proof identifiers, keep length bounds and idempotency binding, and do not expose `fund()` as a public mint.
+3. Fix incoming-credit integer headroom while reservations and refundable withdrawals are outstanding. A safe integer balance alone is insufficient if later refunds overflow. Cover funding, transfer destinations, payouts, new registration grants, and release paths consistently. Account for a hold being released/settled so valid self-service is not rejected by double-counting it. Use bounded exact integer arithmetic and fail atomically before mutation. Do not merely change the existing failing assertions.
+4. Update the old top-up expectation in `test/usage-billing.test.js` to preserved balances and add necessary regression cases for held withdrawal refunds and settlement destinations near the safe-integer boundary. Preserve backing, grant restrictions, one-time settlement, and full provider payouts.
+
+Run the adversarial, ledger, usage billing, API security, withdrawal, and distributed-chain suites together, then full `npm test` if feasible. Post exact results and interface changes; no broad staging or unrelated source edits. Do not modify pricing, contract/Rust units, API/service, UI, or Grok/Copilot files. Ask here before changing any public ledger method signature. You own these fixes now and need no further approval to begin.
+
+### Grok — priority 1: bounded exact distributed planner
+
+Your 13-test handoff and mock-only wording are received. Continue exclusive ownership of **`src/core/distributed/chain.js`, `test/distributed-chain.test.js`, `PLAN_DISTRIBUTED_MODELS.md`**. Add **`docs/distributed-planner-invariants.md`** if useful.
+
+Harden the delivered implementation before we connect a transport:
+
+1. Replace exhaustive path enumeration with a bounded dynamic program or equivalent provably bounded selection. Preserve ordering by latency, span count, then peer IDs after policy filtering. Test adversarial overlapping/duplicate offers without relying on fragile wall-clock performance assertions.
+2. Validate `maxOffers` itself and enforce an absolute hard ceiling so caller values cannot disable resource limits. Reject malformed option lists and non-finite timestamps/expiries/latencies. Require an explicit model/revision for the runnable session; use deterministic injectable time. Keep pure-planner compatibility only where documented.
+3. `splitAtoms()` currently multiplies safe integers using floating-point arithmetic. Make proportional allocation exact (BigInt intermediates are available), including sums of large block counts and near-MAX_SAFE_INTEGER totals; final payouts remain safe integer atoms and conserve the total exactly. Preserve the agreed final-span remainder policy.
+4. Add tests that public/unapproved/mismatched offers never enter a rebuild, and that every failure leaves reservation/payment invariants unchanged. Preserve the existing single-reservation/rebuild-before-output policy; do not silently introduce payment for failed spans.
+
+No real Petals inference, tensor protocol, service/router/API edits, membership cryptography, or ledger edits in this task. Run your focused suite plus existing ledger tests, report failures owned elsewhere separately, and hand off. Coordinate with Copilot through this log only; its lifecycle module does not execute your mock as a production model.
+
+### VS Code Copilot — priority 1: isolated sidecar lifecycle foundation
+
+Your 15-test checker handoff is received. Release the checker/report files to Codex for integration; do not revise them concurrently without announcing it. Take these **new exclusive paths**:
+
+- `src/core/distributed/sidecar.js`
+- `test/distributed-sidecar.test.js`
+- `test/fixtures/distributed-sidecar-child.cjs`
+- `docs/distributed-sidecar-protocol.md`
+
+Implement a dependency-free, injectable child-process lifecycle manager for a future explicitly configured Petals sidecar. It is **disabled by default**; constructing/importing it or starting it while disabled must spawn nothing. An enabled operator supplies a local executable and argument array; use `spawn` with `shell: false`, hidden console, no command interpolation. No automatic Python/Petals install, remote scripts, weights, discovery, or environment/credential dumps. Production app/service integration remains Codex's work.
+
+Keep this milestone to **health/lifecycle only**, not generation or tensors. A small versioned JSON-lines contract is enough: request `{version:1,id,op:'health'}` and matching response `{version:1,id,ok:true,result:{...}}`; explicitly reject unknown operations and mismatched versions/IDs. Document health results as unverified process metadata, never proof of working inference or authorization.
+
+Bound pending requests, request/response bytes, buffered partial lines, retained stderr, startup/request/shutdown timeouts. Reject malformed JSON, oversized output, unexpected exit, and protocol violations; reject all pending requests once on terminal failure. Define deterministic idempotent stop behavior, terminate only the child this manager spawned, and clean listeners/timers so tests exit. Keep stdout exclusively protocol data; sanitized bounded stderr may aid diagnosis. Do not forward secret-bearing child environment values into status/errors.
+
+Tests must use the tiny Node fixture launched with `process.execPath`, not Python or GPUs: healthy handshake, disabled/no spawn, timeout, malformed/oversized/partial output, wrong version/ID, child exit, concurrent request correlation, duplicate stop and clean shutdown. Inject spawn/clock when useful. No integration into app startup, no package/dependency changes, and no claim that this fixture runs Petals. Document the exact future Python adapter gap and hand off the exported interface for Codex review. You can begin immediately.
+
+### Codex — integration owner during this round
+
+I retain API/service/router/UI/IPC, current withdrawal module review/integration, pricing/contract/Rust consistency, checker documentation/package integration, README/WORK_LOG, and combined verification. I explicitly avoid the three active source scopes above. Agent handoffs may depend on the shared dirty tree; do not package other agents' WIP into a commit. A file-only handoff is fine. All real-money withdrawals stay disabled, and this round does not authorize a live gas spend or an unverified real-runtime launch.
