@@ -8,13 +8,13 @@
   <a href="rust/README.md"><img alt="Rust and WASM preview" src="https://img.shields.io/badge/Rust_%2B_WASM-preview-00aeef"></a>
 </p>
 
-LLMesh turns your computer into an AI node. It detects your hardware, chooses a Qwen model, prepares it locally, and gives your applications an OpenAI-compatible endpoint. Connect trusted peers and requests can use a suitable available worker, with streamed responses and metered credits. The 0.8B model and browser workers earn half a credit per reported token, 2B, 4B, and 9B earn one credit, and 27B and larger models earn 1.5 credits.
+LLMesh turns your computer into an AI node. It detects your hardware, selects a Qwen model, prepares it locally, and provides an OpenAI-compatible endpoint. Connect trusted peers and eligible requests can use available workers, with streamed responses and usage-based coordinator credits. Rates are 0.5 credit per reported token for 0.8B and browser workers, 1 credit through 9B, and 1.5 credits above 9B.
 
 You choose how much computing power to contribute. Use the machine in front of you, share a home GPU with your other devices, or build a trusted group that pools access to larger models.
 
-**Open and go:** desktop startup opens AI Companion and automatically starts serving. It prefers your idle native model, then eligible mesh hardware when local inference is occupied. Your Nostr identity and 100,000 free coordinator credits are created automatically; Base settlement is optional.
+**Open and go:** desktop startup opens AI Companion and automatically starts serving. Companion prefers your idle native model, then eligible mesh hardware when local inference is occupied. A local Nostr identity and 10,000 starter credits are created without wallet funding or gas. Base settlement is a separate, optional mode.
 
-**Current status:** an Electron/Node implementation with local inference, a trusted peer mesh, an internal credit ledger, and optional Base token contracts. No live LLMESH token or escrow deployment is supplied. Credits work without a tradeable token. The web worker and desktop-approved QR device linking are implemented. An opt-in internet funnel can publish that authenticated API for a phone, a cloud job, or any other OpenAI client, through an LLMesh relay, Tailscale Funnel, a Cloudflare tunnel, or an existing HTTPS address. Native Android, full Nostr remote signing, the full Rust daemon and the downloadable installer matrix remain roadmap work.
+**Current status:** an Electron/Node implementation with local inference, trusted-peer whole-request routing, an issuer-scoped credit ledger, browser workers, and an opt-in authenticated API funnel. Credits work without a cryptocurrency deployment. Optional Base contracts exist, but no live LLMESH token or escrow deployment is supplied; real-money cash-out is not available. The experimental distributed-model work is a planner/mock, a static compatibility checker, and a disabled sidecar lifecycle foundation—not Petals inference or model sharding in production. Native Android, full Nostr remote signing, the full Rust daemon, and the downloadable installer matrix remain roadmap work.
 
 [Open the web worker](https://amosroger91.github.io/LLMesh/) · [Start](#start-running) · [Features](#what-works-today) · [API](#one-endpoint-for-your-tools) · [Vision](#what-happens-when-the-network-grows) · [Roadmap](#where-were-going)
 
@@ -36,6 +36,7 @@ The ambition is to put more of AI's infrastructure in the hands of the people wh
 | Streaming mesh inference | Authenticated, Noise-encrypted Hyperswarm connections between trusted nodes |
 | Complexity-aware routing | Recommends a tier, then weighs availability, latency, throughput and price |
 | OpenAI-compatible API | Model discovery, streamed chat, function tool calls, route previews and receipts |
+| Issuer-scoped credits | 10,000 non-transferable starter credits; metered work settlements, fee-free transfer of eligible earned credits, and backed-credit accounting |
 | Internet funnel | Publishes that same authenticated API at a verified public URL for phones and cloud clients. Off by default |
 | AI companion | A chat interface to that same mesh pipeline, with cancellation and local history |
 | Network map | Live graph of known trusted desktops, their linked browser devices and your donated API workers |
@@ -46,11 +47,12 @@ The ambition is to put more of AI's infrastructure in the hands of the people wh
 | Dashboard | Hardware, model/setup state, online nodes including yourself, activity, endpoint details, wallet and energy estimates |
 | One-click endpoint test | Sends a built-in message and shows success when a response arrives |
 | Local self-service | Reserves and returns credits to the same account; no Base transaction required |
-| Base integration | ERC-20 grants, funded request escrow, worker payouts and durable settlement retries when configured |
+| Optional Base settlement | Contract-backed escrow/payout mode for explicitly configured peers; no live deployment is included and gas is separate |
+| Distributed-model experiment | Bounded mock block planner, static Petals config/registry checker, and disabled health-only sidecar lifecycle; no distributed inference |
 | Electricity tracking | Editable tariff/currency, NVIDIA board-power readings or fallback watts, session history and cost estimates |
 | Rust/WASM foundation | Portable quote and placement code, shared Node/Rust fixtures, pinned workspace and browser WASM exports |
 
-The multi-GPU pool is tested using simulated hardware and fake Ollama processes. Physical multi-GPU, cross-network NAT and the full platform/release matrix still need deployment testing. See [implementation status](REVIEW_STATUS.md) and [Rust parity](docs/rust-parity.md).
+The multi-GPU pool is tested using simulated hardware and fake Ollama processes. Physical multi-GPU, cross-network NAT and the full platform/release matrix still need deployment testing. Distributed-model code is not connected to production request routing. See [implementation status](REVIEW_STATUS.md), [Rust parity](docs/rust-parity.md), and the [distributed-model status](#distributed-models-experimental).
 
 ## Start running
 
@@ -144,6 +146,8 @@ for chunk in response:
 | `POST /v1/swarm/completions` | Up to 32 independent agent tasks, bounded by available slots and a concurrency limit of 16 |
 | `POST /v1/accounts` | Registration / configured relayed starter grant |
 | `GET /v1/account` | Local account or linked wallet state |
+| `GET /v1/credits` | Authenticated issuer-scoped balance and transfer history |
+| `POST /v1/credits/transfers` | Fee-free internal transfer of eligible credits; starter grants cannot be sent directly |
 
 Supports text and text-part arrays, developer messages, assistant tool calls and tool results. Tools execute in the requesting application. Limits: 256 messages, 128 function definitions, 90,000 serialized input characters and a 512 KiB HTTP body. Positive output limits above 2048 are accepted and clamped; receipts show requested and effective limits. Context scales from 4096 to 32768 tokens. Images, audio, embeddings and complete OpenAI API parity are not implemented.
 
@@ -204,19 +208,29 @@ Hyperswarm provides discovery and direct Noise-encrypted streams. A minimal sign
 
 A remote paid worker needs a receiving wallet and matching chain/escrow settings. The issuer/coordinator dispatches and settles paid jobs. Today's network distributes complete requests, not model layers across machines.
 
+### Distributed models (experimental)
+
+The current request router sends a complete inference request to one selected worker. It does **not** split a production model across several machines. The experimental distributed-model code provides a bounded block-chain planner and deterministic fake-block tests only; those tests exercise planning and ledger settlement behavior, not a model forward pass.
+
+The [read-only Petals compatibility checker](scripts/check-petals-compatibility.js) compares a model config's architecture and `model_type` against Petals revision `22afba627a7eb4fcfe9418c49472c6a51334b8ac`. A static registry match is only a compatibility candidate: it does not prove checkpoint loading, complete block coverage, multi-host inference, output correctness, membership authorization, or performance. At that Petals revision, the built-in registry covers BLOOM, Falcon, Llama, and Mixtral; the checked Qwen3.5/Qwen3.8 configs use `qwen3_5`, which is not supported by the built-in registry. Qwen4-family compatibility remains unknown. See the [sourced feasibility report](docs/petals-runtime-feasibility.md).
+
+The [sidecar lifecycle module](docs/distributed-sidecar-protocol.md) is a disabled-by-default health/process foundation. It is not wired into desktop startup or routing and has no Python/Petals adapter, tensor channel, discovery, or generation operation. Its health response is unverified process metadata, not proof of working inference or an authorized peer.
+
+Any future real distributed runtime requires a pinned and reviewed environment, an explicitly trusted/authenticated participant set, a measured tensor transport and NAT/connectivity plan, and a real two-worker correctness test. A token-input host can read the prompt and other hosts process activations; neither private discovery nor link encryption makes inference confidential. Public-swarm privacy, browser/mobile block hosting, cross-platform support, and blanket speed claims are not established. See the [distributed-model plan](PLAN_DISTRIBUTED_MODELS.md), [Petals compatibility report](docs/petals-runtime-feasibility.md), and [sidecar protocol notes](docs/distributed-sidecar-protocol.md).
+
 ## Compute, credits and electricity
 
 **Using your own node:** the local ledger reserves a quote and credits it back to the same account on completion, or refunds failure. The net change is zero. No blockchain or gas is needed. Electricity and hardware still have real costs.
 
 **Using another node:** credits move one-for-one from requester to worker at the serving model's rate. A completion with 300 input and 120 output tokens transfers **210 credits** on the 0.8B model or a browser worker, **420 credits** on a 2B, 4B, or 9B model, and **630 credits** on a 27B or larger model. Contribution level does not set the rate. Actual tool-call generation is included in runtime token usage. An initial refundable reservation covers the configured context ceiling plus output limit at that rate; unused credits are returned at settlement. The maximum authorization is 52,224 credits, which is 34,816 tokens at the 1.5 rate. A reservation is not the final price.
 
-New approved accounts start with **100,000 credits**. Existing local accounts receive a one-time 99,900-credit upgrade from the old 100-credit starter allocation without resetting past spending or earnings. Registration remains once per wallet and Nostr key, with allowlist admission and rate limits. Pairing a browser does not create a new account or grant. A self-served request returns the reservation to the same account: **no self-mining or net issuance**.
+New local accounts receive **10,000 starter credits**. Starter credits are promotional: they cannot be directly transferred or made withdrawable by self-service. Existing balances are preserved; database migration converts historical credit units without topping accounts up to the new grant amount. Browser pairing does not create another account or grant. A self-served request has no net balance cost and does not increase earned or backed balances.
 
-The [contracts](contracts/LLMesh.sol) implement an 18-decimal ERC-20: one whole LLMESH represents one inference credit. Escrow v5 settles in half-credit units so 0.5 and 1.5 credits are exact; one chain unit is 0.5 LLMESH. **Metered model rates require escrow v5; v4 deployments are incompatible and are not upgraded automatically.** New deployments issue the 100,000-credit grant. Existing on-chain deployments need an explicit migration/redeployment; a local database upgrade does not mint ERC-20 tokens. Existing local ledgers are scaled once from whole credits to half-credit units so balances keep the same credit value.
+The [contracts](contracts/LLMesh.sol) implement an 18-decimal ERC-20. Internal accounting uses half-credit atoms so 0.5- and 1.5-credit rates are exact. **Metered model rates require escrow v5; v4 deployments are incompatible and are not upgraded automatically.** Contract grants and escrow are only available when operators explicitly configure compatible deployed contracts and funding. A local database migration does not mint tokens, and there is no supplied live deployment.
 
-Escrow locks a maximum budget, pays the attested used credits to the worker, and returns the rest to the payer in one settlement. Delivery signatures bind the actual used-credit amount as well as chain, contract, job and output hash. Workers check that the attested count matches their recorded usage before accepting it. Durable retries separate generation from confirmation. Early refunds require signed worker failure; ordinary refunds wait for expiry plus a 24-hour dispute window. Failed or cancelled generations without final usage do not earn credits; the system does not guess token counts from streamed text.
+Escrow locks a maximum budget, pays metered credits to the worker, and returns unused authorization according to the settlement contract. Delivery signatures bind usage and job details; this coordinator attestation is not a permissionless proof of correct model execution. Internal credit balances are scoped to the issuing coordinator. The issuer records actual work and provider shares, preserves backed versus unbacked provenance, prevents starter grants from being directly transferred, and supports fee-free transfers of eligible earned balances within that issuer. Only backed credits are marked redeemable. A receipt from one coordinator does not mint a second spendable balance at another.
 
-Local credits cannot pay other nodes or become ERC-20 balances. Base gas is additional. No live deployment, independent contract audit, token market value or permissionless proof of correct inference is supplied. The coordinator remains trusted for admission and delivery attestations. Payment channels, stronger distributed settlement and recovery are planned.
+The Base Sepolia deposit/withdrawal adapter is testnet-only and is not wired into user-facing product flows. Real-money withdrawals remain disabled; no cash value, exchange, liquidity, redemption guarantee, or market is supplied. Network fees require ETH and are not funded by deducting credits. No live deployment or independent contract audit is supplied. Coordinators remain trusted for admission, ledger operation, and usage attestations.
 
 In **Energy & costs**, enter your electricity price per kWh and currency. NVIDIA board-power readings can be combined with estimated host overhead; other systems use editable fallback watts. A wall-meter reading can override the estimate. Local sessions and per-currency totals persist. Measurements can include other applications; CPU/PSU overhead and unsupported hardware are estimates. Concurrent-instance attribution and idle-baseline subtraction still need work. There is no automatic token-to-fiat conversion.
 
@@ -275,7 +289,7 @@ The app contains no social rooms, public feed or RSS bots. Nostr provides identi
 
 **Contribute overnight. Build during your workday.** A developer without a 16 GB GPU could let a smaller computer serve real requests while idle, bank the earned credits, then spend them on another person's larger model during work. Their own hardware remains in the pool: suitable tasks can stay local, tiny tasks can use waiting mobile/browser workers, and demanding tasks can use higher-end machines. Donated API allowance adds capacity for people without a useful GPU and can help bootstrap speed and model quality.
 
-The tangible unit is reported inference work, not merely leaving an app open. Idle time does not mint tokens. ERC-20 balances are transferable, enabling a future exchange for money as well as inference; an exchange, liquidity and monetary value are not supplied or guaranteed. One token is an accounting unit accepted by participating workers, not a guaranteed claim on reserved hardware, electricity, or a fixed quality of answer. Model tokenizers and computational costs differ. The rate follows the serving model: 0.5 credit per token for 0.8B and browser workers, 1 through 9B, and 1.5 above that.
+The tangible unit is reported inference work, not merely leaving an app open. Idle time does not mint credits. Eligible earned credits can be transferred without an LLMesh percentage fee within the issuing coordinator; promotional starter credits cannot be directly transferred. Backed/redeemable accounting is kept separate from unbacked credits. There is no live cash-out path, exchange, liquidity, or guaranteed monetary value. Any future redemption would require separate funding, gas, security, and policy work and is not promised. Credits are not a guaranteed claim on reserved hardware, electricity, or a fixed answer quality. Model tokenizers and compute costs differ; rates are 0.5 credit per token for 0.8B and browser workers, 1 through 9B, and 1.5 above that.
 
 One local model gives one person more control. A widely adopted mesh could make that control useful at a different scale: a classroom sharing a GPU after hours, a neighborhood cooperative pooling hardware, an independent researcher accessing a larger model, or a small organization running its own private inference network.
 
@@ -283,7 +297,7 @@ Instead of every useful interaction increasing dependence on a few centralized p
 
 That is one route toward **democratizing access to LLMs**: lower the barrier to participation, make useful capability available on ordinary hardware, and let people combine resources when one machine is not enough. It could enable community services that are free to use when someone donates the compute. It does not make electricity, equipment or bandwidth free, or guarantee that every request costs nothing.
 
-**Data sovereignty means having a meaningful choice about where your data goes and who can act on it.** Keeping a sensitive request local, choosing a trusted worker, inspecting the software and retaining your records are concrete parts of that choice. The planned privacy levels and organization-controlled edition aim to make those boundaries enforceable and visible across more deployments.
+**Data sovereignty means having a meaningful choice about where your data goes and who can act on it.** Keeping a sensitive request local, choosing a trusted worker, inspecting the software and retaining your records are concrete parts of that choice. Today, Companion is hardware-only, while ordinary API requests can use the saved privacy preference or an explicit per-request choice. Remote workers and API providers can see the data they process; these controls are routing choices, not confidential-computing guarantees.
 
 Wider adoption would not automatically remove corporate power or create an equal network. Large hardware owners could still dominate supply; relays, wallets and software distribution can become new choke points. Open code, portable identities, transparent pricing, alternatives to mandatory hosted services and community governance all matter. The goal is to give people more ways to build and use AI on their own terms—and make centralized services an option they can leave.
 
@@ -298,13 +312,14 @@ Wider adoption would not automatically remove corporate power or create an equal
 | Rust | Quote/placement crates, shared fixtures, CLI preview, WASM exports | Validation/routing bindings, daemon, libp2p and parity-gated desktop sidecar |
 | Android | Architecture defined | Termux requester first, then Kotlin/UniFFI native app |
 | Web | GitHub Pages WebGPU/WASM worker, encrypted WebRTC link, online count and activity | Real-device/browser matrix, persistent sessions and PWA requester |
+| Distributed models | Offline planner/mock, static registry checker, disabled health-only sidecar foundation | Pinned Petals adapter, authenticated membership, measured transport, and real multi-host correctness/platform tests |
 | Shared accounts | Desktop-approved browser worker sessions; earnings stay on its account | Full NIP-46 signer integration and cross-platform account portability |
 | Security | Trusted peers, replay checks, encrypted transport/local key options | Rust-only group PKI, privacy sealing, audit and Sovereign edition |
-| Payments | Internal credits by default. Optional Base escrow v5 when contracts are configured. Signed receipts confirm earnings at another coordinator and do not mint spendable money locally | Recovery export, audited channels, and any later exchange |
+| Payments | Issuer-scoped internal credits by default; optional configured Base escrow contracts. Signed worker receipts do not create a second balance at another issuer. Real-money withdrawals disabled | Recovery export, contract audit, and any separately reviewed funding/redemption design |
 
 The worker QR flow approves a new device through its desktop; it does not put a private key or wallet seed in the QR. Account identity, device membership and spending permission remain separate. Signing into the same account must not mint another starter grant. History synchronization is separately consented, not an automatic upload of conversations.
 
-Node keeps shipping until Rust passes parity. WASM shares portable logic, not the entire native daemon: browsers need different transport/storage adapters and cannot spawn Ollama or inspect free VRAM like a native app. The companion continues to use the same mesh inference pipeline.
+Node keeps shipping until Rust passes parity. WASM shares portable logic, not the entire native daemon: browsers need different transport/storage adapters and cannot spawn Ollama or inspect free VRAM like a native app. The companion continues to use the same whole-request mesh inference pipeline.
 
 Plans and acceptance criteria:
 
@@ -453,18 +468,14 @@ Verification uses no desktop mouse or keyboard automation: `npm test` covers rou
 
 Desktop startup opens **AI Companion** every time and automatically starts hardware setup and serving. Companion prefers an idle native model on this computer, even if another worker is faster. When local hardware is occupied or incompatible with the request, it can use another eligible hardware worker. Donated APIs and automatic abliterated selection remain excluded. Messages submitted during automatic model preparation can wait for setup within the request timeout.
 
-Desktop and headless CLI now default to **free coordinator credits**. The Nostr identity and 100,000-credit starter balance are created locally without a signup, wallet funding, or gas. In Settings → Settlement, choose free credits or optional Base ERC-20 escrow. CLI uses `--settlement credits|base` or `LLMESH_SETTLEMENT`. Changing modes keeps the two balances separate. Requests reserve a maximum budget, settle actual metered usage on completion, and refund unused credits. Failed work earns no credits. Self-served work spends and earns the same amount, so its net cost is zero.
+Desktop and headless CLI default to **free coordinator credits**. A local Nostr identity and 10,000-credit starter grant are created without signup, wallet funding, or gas. In Settings → Settlement, choose free credits or optional Base ERC-20 escrow. CLI uses `--settlement credits|base` or `LLMESH_SETTLEMENT`; the two balances remain separate. Requests reserve a maximum budget, settle actual metered usage on completion, and refund unused credits. Failed work earns no credits. Self-service has no net balance cost and does not increase earned or backed balances.
 
 A free-credit coordinator immediately credits its selected worker in **that coordinator's ledger**. It sends a Nostr-signed earnings receipt over the authenticated encrypted mesh. The worker verifies that the receipt matches its completed model and token usage, stores it, acknowledges it, and shows the issuer balance under Token wallet. Pending receipts retry after reconnection; duplicate deliveries do not create additional earnings. These receipts are not added to the worker's separate local spendable balance. The issuing coordinator's API accepts that worker's Nostr identity for spending those earnings. Linked browser harvesting stays attached to its desktop account.
 
 **Credit scope matters:** these are issuer-scoped inference credits, not a new globally settled blockchain asset, guaranteed cash value, or automatic Base token conversion. Coordinators remain trusted to maintain and honor their balances. Use the issuer's API to spend its credits; there is no claim that a balance can be independently spent at every node. Optional Base escrow remains available for configured and funded peers, with its own balance and network fees. Base gas sponsorship charges a sponsor rather than removing network costs ([Base account abstraction](https://www.base.org/blog/native-account-abstraction)). LLMesh does not purchase a paymaster service, deploy contracts, or spend gas automatically.
 
-### Implementation and agent coordination
+### Development and verification
 
-Current decisions, goals, progress, and blockers are recorded in [WORK_LOG.md](WORK_LOG.md). Agents sharing this checkout introduce themselves and coordinate active edits in [AGENT_COORDINATION.md](AGENT_COORDINATION.md), including incomplete work and current test failures.
+Run the focused sidecar protocol tests with `node --test test/distributed-sidecar.test.js`; run the static Petals checker with `node scripts/check-petals-compatibility.js --help`. The checker reads only bounded config/registry metadata and never loads model code or weights. Neither it nor the local Node fixture demonstrates a working Petals runtime.
 
-**Distributed-model proposal:** [PLAN_DISTRIBUTED_MODELS.md](PLAN_DISTRIBUTED_MODELS.md) records the pending Codex/Grok implementation plan for an optional Petals backend. This is planned work, including an explicit Qwen compatibility milestone; it is not an already available model-sharding feature.
-
-Agent implementation ownership, current handoffs, and distributed-model work assignments are recorded in [AGENT_COORDINATION.md](AGENT_COORDINATION.md); decisions and verification progress are tracked in [WORK_LOG.md](WORK_LOG.md). The Petals planner and compatibility work are experimental and do not yet establish real cross-device model execution.
-
-The experimental distributed-model work now includes a tested mock block planner and a read-only Petals architecture checker. Bounded planning, exact split arithmetic, and an optional sidecar lifecycle layer are in progress; real multi-host inference and Qwen runtime compatibility remain unverified. Current agent ownership and test results are maintained in the coordination log.
+See the [public-alpha roadmap](ROADMAP.md), [distributed-model plan](PLAN_DISTRIBUTED_MODELS.md), [Petals compatibility report](docs/petals-runtime-feasibility.md), and [sidecar protocol documentation](docs/distributed-sidecar-protocol.md) for scope and acceptance gates. The distributed-model prototype must remain separate from production routing until real runtime, trust, privacy, transport, and platform evidence is available.
