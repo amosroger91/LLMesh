@@ -1,3 +1,4 @@
+import {recordInference} from '../shared/inference-metrics.js';
 import {nodeProfile} from '../shared/node-profile.js';
 import Hyperswarm from 'hyperswarm';
 import { EventEmitter } from 'node:events';
@@ -161,12 +162,11 @@ export class Mesh extends EventEmitter {
             msg.calls.some(call => !Number.isInteger(call.index) || call.index < 0 || call.index >= 128 || typeof call.id !== 'string' || call.id.length > 200 ||
               call.type !== 'function' || typeof call.function?.name !== 'string' || typeof call.function.arguments !== 'string') ||
             (task.bytes += Buffer.byteLength(JSON.stringify(msg.calls))) > 262144) throw new Error('Invalid worker tool calls');
-        task.onDelta({ type: 'tool_calls', calls: msg.calls });
+        if(!task.firstAt){task.firstAt=performance.now();task.buffered=true;}task.onDelta({ type: 'tool_calls', calls: msg.calls });
       } else if (msg.type === 'done') {
         if (!Number.isSafeInteger(msg.tokens) || msg.tokens < 0 || msg.tokens > task.maxTokens ||
             !Number.isSafeInteger(msg.promptTokens ?? 0) || (msg.promptTokens ?? 0) < 0 || (msg.promptTokens ?? 0) > 32768) throw new Error('Invalid worker token usage');
-        if (task.firstAt && Number.isFinite(msg.tokens) && msg.tokens > 0 && msg.tokens <= task.maxTokens)
-          ((peer.metrics ??= {})[task.model] ??= {}).tokensPerSecond = peer.tokensPerSecond = msg.tokens / Math.max(0.001, (performance.now() - task.firstAt) / 1000);
+        if(task.firstAt){const metric=(peer.instanceMetrics??={})[task.instanceId??task.model]??={};recordInference(metric,{firstTokenMs:Math.max(0,task.firstAt-task.started-(peer.latencyMs??0)),tokens:msg.tokens,durationMs:Math.max(0,performance.now()-task.started-(peer.latencyMs??0)),buffered:task.buffered});peer.tokensPerSecond=metric.tokensPerSecond;}
         peer.loadedModel = task.model;
         this.pending.delete(msg.id); task.resolve({ worker: peer.pubkey, tokens: msg.tokens,
           promptTokens: msg.promptTokens ?? 0, finishReason: ['length', 'tool_calls'].includes(msg.finishReason) ? msg.finishReason : 'stop' });
@@ -183,12 +183,12 @@ export class Mesh extends EventEmitter {
   workers() {
     return [...this.byIdentity.values()].filter(peer=>this.allowedWorkers.includes(peer.pubkey)).flatMap(peer=>{
       const base={devices:peer.devices,pubkey:peer.pubkey,models:peer.models,busy:Math.max(peer.busy,peer.inFlight),seen:peer.seen,latencyMs:peer.latencyMs,
-        firstTokenMs:peer.firstTokenMs,tokensPerSecond:peer.tokensPerSecond,hardware:peer.hardware,loadedModel:peer.loadedModel,metrics:peer.metrics,
+        firstTokenMs:peer.firstTokenMs,tokensPerSecond:peer.tokensPerSecond,hardware:peer.hardware,loadedModel:peer.loadedModel,metrics:{...peer.metrics,...peer.instanceMetrics},
         working:peer.working,memoryBlocked:peer.memoryBlocked,profile:peer.profile,supportsTools:peer.supportsTools,contribution:peer.contribution,wallet:peer.wallet,chainId:peer.chainId,escrow:peer.escrow};
       if(!peer.slots)return [base];
       return peer.slots.map(slot=>({...base,instanceId:slot.id,models:[slot.model],total:slot.total,
           requestTokenLimit:slot.requestTokenLimit,maxContextTokens:slot.maxContextTokens,source:slot.source,creditBudget:slot.creditBudget,modelCatalog:slot.source==='third-party'?[slot.modelInfo]:[],supportsTools:slot.supportsTools,free:Math.max(0,slot.free-(peer.instanceInFlight?.get(slot.id)??0)),busy:slot.free>(peer.instanceInFlight?.get(slot.id)??0)?0:1,
-        metrics:{[slot.model]:{firstTokenMs:slot.firstTokenMs,tokensPerSecond:slot.tokensPerSecond}}}));
+        metrics:{[slot.model]:{firstTokenMs:slot.firstTokenMs,tokensPerSecond:slot.tokensPerSecond,...peer.instanceMetrics?.[slot.id]}}}));
     });
   }
   acknowledge(worker, payment) {
@@ -205,7 +205,7 @@ export class Mesh extends EventEmitter {
     try {
       return await new Promise((resolve, reject) => {
         const abort = () => { this.pending.delete(id); this.send(peer, { type: 'cancel', id }).catch(() => {}); reject(new Error('Request cancelled or timed out')); };
-        this.pending.set(id, { peer, onDelta, bytes: 0, resolve, reject, started: performance.now(), maxTokens: job.maxTokens, model: job.model });
+        this.pending.set(id, { peer, onDelta, bytes: 0, resolve, reject, instanceId:job.instanceId,started: performance.now(), maxTokens: job.maxTokens, model: job.model });
         signal.addEventListener('abort', abort, { once: true });
         // Remove the listener when this request settles, including disconnects.
         const pending = this.pending.get(id);

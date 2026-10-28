@@ -75,6 +75,7 @@ else {
     handle('browser-remove', id => { emit('browser-send',{deviceId:id,message:{type:'revoked'}});service.browserWorkers.remove(id); });
     service.browserWorkers.on('send', value => emit('browser-send',value));
     handle('contribution', level => service.configureContribution(level));
+    handle('force-model',()=>service.configureContribution(service.contributionLevel,{forceMemory:true}));
     handle('route-preview', job => service.route(job));
     handle('copy', name => { const state = service.status(); const value = { endpoint: state.api + '/v1', apiKey: service.apiKey, modelId: 'llmesh-auto', modelName: 'LLMesh Auto', wallet: state.payments.address, pubkey: state.pubkey }[name]; if (value) clipboard.writeText(value); });
     handle('energy', settings => service.energy.configure(settings));

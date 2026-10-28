@@ -1,3 +1,4 @@
+import {recordInference} from '../../shared/inference-metrics.js';
 import { EventEmitter } from 'node:events';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -113,8 +114,8 @@ export class OllamaPool extends EventEmitter {
   snapshot(){return this.instances.map(({client:_client,child:_child,restartTimer:_timer,...instance})=>({...instance,model:instance.model.id,free:instance.state==='ready'?Math.max(0,instance.slots-instance.inFlight):0}));}
   async *chat(job,signal){const instance=this.instances.find(item=>(!job.instanceId||item.id===job.instanceId)&&item.model.id===job.model&&item.state==='ready'&&item.inFlight<item.slots);
     if(!instance)throw Object.assign(new Error('No runtime slot available'),{retryable:true});instance.inFlight++;const started=performance.now();let firstAt;
-    try{for await(const part of instance.client.chat(job,signal)){if(!firstAt&&['delta','tool_calls'].includes(part.type)){firstAt=performance.now();instance.metrics.firstTokenMs=firstAt-started;}
-      if(part.type==='done'&&firstAt)instance.metrics.tokensPerSecond=part.tokens/Math.max(.001,(performance.now()-firstAt)/1000);yield part;}
+    try{for await(const part of instance.client.chat(job,signal)){if(!firstAt&&['delta','tool_calls'].includes(part.type)){firstAt=performance.now();}
+      if(part.type==='done'&&firstAt)recordInference(instance.metrics,{firstTokenMs:firstAt-started,tokens:part.tokens,durationMs:performance.now()-started});yield part;}
     }finally{instance.inFlight--;}
   }
   async installed(){const lists=await Promise.all(this.instances.map(instance=>instance.client?.installed().catch(()=>[])??[]));return [...new Set(lists.flat())];}

@@ -1,3 +1,4 @@
+import {responseView,splitThinking} from './response-view.js';
 import {donationControls} from './donations.js';
 import {browserBridge} from './browser-bridge.js';
 import { LocalStore } from '../browser/storage.js';
@@ -72,6 +73,9 @@ async function refresh() {
   $('worker-list').replaceChildren();
   for (const worker of state.workers) textRow($('worker-list'), short(worker.pubkey), `${worker.busy ? 'Busy' : 'Idle'} · ${worker.latencyMs.toFixed(0)} ms RTT · ${worker.wallet ? 'wallet ready' : 'no wallet'}`);
   if (!state.workers.length) $('worker-list').textContent = 'No trusted inference workers connected.';
+  const speeds=[...(state.instances??[]).map(item=>({...item,name:'Your desktop'})),...(state.browserDevices??[]),...(state.donations??[]).map(item=>({...item,name:item.provider})),...state.workers.flatMap(worker=>worker.models.map(model=>({id:worker.instanceId??worker.pubkey,name:worker.profile?.name??short(worker.pubkey),model,metrics:worker.metrics?.[model]})))].map(item=>({...item,measurement:item.metrics??item})).filter(item=>Number.isFinite(item.measurement.tokensPerSecond)&&item.measurement.tokensPerSecond>0).sort((a,b)=>b.measurement.tokensPerSecond-a.measurement.tokensPerSecond);
+  $('speed-ranking').replaceChildren();speeds.forEach((item,index)=>textRow($('speed-ranking'),`${index+1}. ${item.name} · ${item.model}`,`${item.measurement.tokensPerSecond.toFixed(1)} tokens/s · ${Math.round(item.measurement.firstTokenMs??0)} ms first token`));
+  if(!speeds.length)$('speed-ranking').textContent='Complete a request to measure worker speed.';
   renderDonations?.(state); renderEnergy(state.energy); renderPayments(state.payments);
   if (first) {
     const energy = state.energy.settings;
@@ -101,18 +105,19 @@ api.onRoute(showRoute);
 document.querySelectorAll('[data-level]').forEach(button => { button.onclick = async () => {
   try { await api.contribution(button.dataset.level); await refresh(); } catch (e) { error(e); }
 }; });
+bind('force-model',()=>task('force-model',async()=>{await api.forceModel();await refresh();}));
 bind('retry-setup', () => task('retry-setup', async () => { await api.contribution(state.pendingContribution ?? state.contributionLevel); await refresh(); }));
 async function runInference(job, target, privacy=$('privacy-mode').value,companion=false) {
   if (inferenceActive) throw new Error('A request is already running');
   inferenceActive = true; $('send').disabled = $('companion-send').disabled = $('companion-clear').disabled = true;
-  outputNode = document.createTextNode(''); target.append(outputNode);
+  outputNode = responseView(target);
   try {
     const receipt = await (companion?api.companionChat:api.chat)({...job,privacy,...(companion?{hardwareOnly:true}:{})});
     const detail = `Completed using ${receipt.model} on ${receipt.worker === state.pubkey ? 'your node' : short(receipt.worker)} · ${receipt.credits} credits (${receipt.promptTokens ?? 0} input + ${receipt.outputTokens ?? 0} output tokens) · ${receipt.route.settlement === 'local-self' ? 'spent and earned back' : receipt.transaction ?? (receipt.settlement === 'settle-pending' ? 'settlement pending' : 'settled')}`;
     for (const id of ['route-status', 'companion-route']) $(id).textContent = detail + (receipt.route.degraded ? ' · Below recommended tier' : '');
-    return { receipt, text: outputNode.textContent };
+    outputNode.finish(); return { receipt, text: outputNode.textContent };
   } finally {
-    outputNode = null; inferenceActive = false; $('send').disabled = $('companion-send').disabled = $('companion-clear').disabled = false; await refresh();
+    outputNode?.finish(); outputNode = null; inferenceActive = false; $('send').disabled = $('companion-send').disabled = $('companion-clear').disabled = false; await refresh();
   }
 }
 bind('send', async () => {
@@ -152,7 +157,7 @@ bind('companion-clear', async () => {
 });
 bind('companion-send', async () => {
   const prompt = $('companion-prompt').value.trim(); if (!prompt || inferenceActive) return;
-  const messages = [...companionHistory, { role: 'user', content: prompt }].slice(-12);
+  const messages = [...companionHistory.map(message=>message.role==='assistant'?{...message,content:splitThinking(message.content,true).filter(part=>!part.thought).map(part=>part.text).join('').trim()}:message), { role: 'user', content: prompt }].slice(-12);
   while (messages.length > 1 && JSON.stringify(messages).length > 12000) messages.splice(0, 2);
   const row = document.createElement('div'); row.className = 'chat-message';
   const user = document.createElement('small'); user.textContent = prompt; row.append(user); $('companion-history').append(row);
@@ -166,7 +171,7 @@ bind('companion-send', async () => {
 async function initialize() {
   renderDonations=donationControls(api); browserBridge(api); await refresh(); store = await new LocalStore().open();
   companionHistory = await store.get('companion-history') ?? [];
-  for (const message of companionHistory) { const row = document.createElement('div'); row.className = 'chat-message'; row.textContent = `${message.role}: ${message.content}`; $('companion-history').append(row); }
+  for (const message of companionHistory) { const row = document.createElement('div'); row.className = 'chat-message'; if(message.role==='assistant'){const view=responseView(row);view.appendData(message.content);view.finish();}else row.textContent=message.content; $('companion-history').append(row); }
   setInterval(() => refresh().catch(error), 1500);
   const savedView = localStorage.getItem('llmesh-view'); document.querySelector(`[data-view="${['overview', 'companion', 'network', 'donations', 'energy', 'wallet'].includes(savedView) ? savedView : 'overview'}"]`)?.click();
   document.body.dataset.ready = 'true';

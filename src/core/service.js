@@ -1,3 +1,4 @@
+import {recordInference} from '../shared/inference-metrics.js';
 import {memoryFailure} from '../shared/memory-status.js';
 import {nodeProfile} from '../shared/node-profile.js';
 import {ProviderPool} from './providers.js';
@@ -56,7 +57,7 @@ export class Service extends EventEmitter {
     if (!CONTRIBUTION[this.contributionLevel]) this.contributionLevel = 'medium';
     this.setup = { state: 'waiting', message: 'Automatic hardware setup will start shortly.' };
     if (network) this.mesh = new Mesh({ secret, topic, allowedWorkers, trustedCoordinators,
-      describe: () => ({ working:Boolean(this.busy), memoryBlocked:this.setup.state==='error'&&memoryFailure(this.setup.message), profile:this.nodeProfile, models: this.servingModels(), busy: Number(this.draining || !this.localSlots().some(slot=>slot.free>0)), slots: this.localSlots(), devices: this.browserWorkers.snapshot().map(device=>({id:device.id,name:device.name,profile:device.profile,model:device.engineModel||device.model,ready:device.state==='ready',memoryBlocked:device.memoryBlocked===true,busy:Boolean(device.busy)})),
+      describe: () => ({ working:Boolean(this.busy), memoryBlocked:this.setup.state==='error'&&memoryFailure(this.setup.message), profile:this.nodeProfile, models: this.servingModels(), busy: Number(this.draining || !this.localSlots().some(slot=>slot.free>0)), slots: this.localSlots(), devices: this.browserWorkers.snapshot().map(device=>({id:device.id,name:device.name,profile:device.profile,model:device.engineModel||device.model,ready:device.state==='ready',disabled:device.state==='paused',memoryBlocked:device.memoryBlocked===true,busy:Boolean(device.busy)})),
         contribution: this.profile?.level ?? this.contributionLevel,
         loadedModel: this.loadedModel, hardware: this.hardwareSummary(),
         wallet: this.payments?.wallet.address, chainId: this.payments?.state.chainId, escrow: this.payments?.settings.escrow }),
@@ -97,18 +98,19 @@ export class Service extends EventEmitter {
     await this.refresh(); await this.energy.scan();
     return this.status();
   }
-  async scanHardware(level = this.contributionLevel) {
+  async scanHardware(level = this.contributionLevel, options = {}) {
     this.hardware = await detectHardware(); this.recommendation = recommend(this.hardware);
-    this.proposedProfile = chooseContribution(this.hardware, level, this.placementOptions); return this.proposedProfile;
+    this.proposedProfile = chooseContribution(this.hardware, level, {...this.placementOptions,...options}); return this.proposedProfile;
   }
   nativeSlots() {
     if (this.pool) return this.ollama.snapshot().map(instance=>({id:instance.id,model:instance.model,total:instance.slots,free:this.draining||this.installing?0:instance.free,firstTokenMs:instance.metrics.firstTokenMs,tokensPerSecond:instance.metrics.tokensPerSecond}));
     return this.nativeModels().map(model=>({id:'legacy',model,total:1,free:this.localEnergyJobs||this.installing||this.draining?0:1,...this.modelMetrics[model]}));
   }
-  localSlots() { return [...this.nativeSlots(),...this.browserWorkers.snapshot().map(instance=>({id:instance.id,model:instance.model,total:1,free:this.draining?0:instance.free,supportsTools:instance.supportsTools,maxContextTokens:4096,source:instance.community?'community':undefined})),...this.providers.snapshot().map(instance=>({id:instance.id,model:instance.model,total:1,free:this.draining?0:instance.free,source:'third-party',modelInfo:instance.modelInfo,creditBudget:instance.remainingCredits,requestTokenLimit:instance.requestTokenLimit,...instance.metrics}))]; }
+  localSlots() { return [...this.nativeSlots(),...this.browserWorkers.snapshot().map(instance=>({id:instance.id,model:instance.model,total:1,free:this.draining?0:instance.free,...instance.metrics,supportsTools:instance.supportsTools,maxContextTokens:4096,source:instance.community?'community':undefined})),...this.providers.snapshot().map(instance=>({id:instance.id,model:instance.model,total:1,free:this.draining?0:instance.free,source:'third-party',modelInfo:instance.modelInfo,creditBudget:instance.remainingCredits,requestTokenLimit:instance.requestTokenLimit,...instance.metrics}))]; }
   servingModels() { return [...new Set([...this.nativeModels(),...this.browserWorkers.snapshot().filter(instance=>instance.state==='ready').map(instance=>instance.model),...this.providers.snapshot().filter(instance=>instance.free).map(instance=>instance.model)])]; }
   nativeModels() { if(this.pool) return [...new Set(this.ollama.instances.filter(instance=>instance.state==='ready').map(instance=>instance.model.id))]; return this.assignedModel ? this.ready.filter(model => model === this.assignedModel) : this.profile ? [] : this.ready; }
-  async configureContribution(level = this.contributionLevel) {
+  async configureContribution(level = this.contributionLevel, options = {}) {
+    if(options.forceMemory&&(this.busy||this.installing||this.reservations.size))throw new Error('Finish active requests and setup before forcing a model load');
     if (!CONTRIBUTION[level]) { this.setup = { state: 'error', message: 'Choose low, medium, or high contribution' }; return this.status(); }
     this.ledger.db.prepare("INSERT OR REPLACE INTO preferences VALUES ('contribution', ?)").run(level);
     if (this.busy || this.installing || this.reservations.size) {
@@ -119,7 +121,7 @@ export class Service extends EventEmitter {
     this.setup = { state: 'scanning', message: 'Scanning hardware and selecting your model…' };
     try {
       if(this.pool) {
-        await this.ollama.stopInstances(); await this.scanHardware(level); this.profile=this.proposedProfile; this.assignedModel=null;
+        await this.ollama.stopInstances(); await this.scanHardware(level,options); this.profile=this.proposedProfile; this.assignedModel=null;
         this.setup={state:'installing',message:this.profile.reason};
         await this.ollama.configure(this.profile.placement,this.hardware,item=>{this.setup={...this.setup,message:item.status,completed:item.completed,total:item.total};this.emit('progress',item);});
         this.ready=this.nativeModels(); if(!this.ready.length)throw new Error(this.ollama.instances.map(instance=>instance.error).filter(Boolean).join('; ')||this.profile.reason);
@@ -127,7 +129,7 @@ export class Service extends EventEmitter {
         this.setup={state:'ready',message:`${this.ready.join(', ')} ready across ${this.ollama.instances.filter(instance=>instance.state==='ready').length} instances.`}; return this.status();
       }
       if (this.loadedModel) await this.ollama.unload?.(this.loadedModel);
-      this.loadedModel = null; this.assignedModel = null; await this.scanHardware(level); this.profile = this.proposedProfile;
+      this.loadedModel = null; this.assignedModel = null; await this.scanHardware(level,options); this.profile = this.proposedProfile;
       if (!this.profile.model) throw new Error(this.profile.reason);
       const selected = this.profile.model;
       const candidates = this.profile.candidates?.length ? this.profile.candidates : catalog.models.filter(model => model.rank <= selected.rank && model.minRamGB <= this.hardware.ramGB && model.memoryGB * MODEL_MEMORY_FACTOR <= this.profile.availableMemoryGB).reverse();
@@ -178,11 +180,11 @@ export class Service extends EventEmitter {
     this.ready = (await this.ollama.installed().catch(() => [])).filter(id => catalog.models.some(m => m.id === id));
   }
   topology() {
-    const nodes=[{id:this.pubkey,name:this.nodeProfile.name,profile:this.nodeProfile,kind:'desktop',connected:true,memoryBlocked:this.nativeModels().length===0&&this.setup.state==='error'&&memoryFailure(this.setup.message),ready:!this.draining&&(this.nativeModels().length>0||this.providers.snapshot().some(provider=>provider.state==='ready')),busy:Boolean(this.busy),model:this.currentModel??this.assignedModel}],edges=[];
+    const nodes=[{id:this.pubkey,name:this.nodeProfile.name,profile:this.nodeProfile,kind:'desktop',connected:true,disabled:this.draining||this.setup.state==='error',memoryBlocked:this.nativeModels().length===0&&this.setup.state==='error'&&memoryFailure(this.setup.message),ready:!this.draining&&(this.nativeModels().length>0||this.providers.snapshot().some(provider=>provider.state==='ready')),busy:Boolean(this.busy),model:this.currentModel??this.assignedModel}],edges=[];
     const add=(node,parent)=>{if(nodes.length>=200||nodes.some(item=>item.id===node.id))return;nodes.push(node);edges.push({from:parent,to:node.id});};
     for(const worker of this.mesh?.workers()??[]){add({id:worker.pubkey,name:worker.profile?.name??worker.pubkey.slice(0,10),profile:worker.profile,kind:'peer',connected:true,memoryBlocked:worker.memoryBlocked===true,ready:worker.models.length>0,busy:worker.working===true,model:worker.models[0]},this.pubkey);
       for(const device of worker.devices??[])add({...device,kind:'browser'},worker.pubkey);}
-    for(const device of this.browserWorkers.snapshot())add({id:device.id,name:device.name,profile:device.profile,kind:'browser',connected:true,ready:device.state==='ready',memoryBlocked:device.memoryBlocked===true,busy:Boolean(device.busy),model:device.engineModel||device.state},this.pubkey);
+    for(const device of this.browserWorkers.snapshot())add({id:device.id,name:device.name,profile:device.profile,kind:'browser',connected:true,ready:device.state==='ready',disabled:device.state==='paused',memoryBlocked:device.memoryBlocked===true,busy:Boolean(device.busy),model:device.engineModel||device.state},this.pubkey);
     for(const provider of this.providers.snapshot())if(provider.state==='ready')add({id:provider.id,name:provider.provider+' API',kind:'provider',state:provider.state,busy:Boolean(provider.busy),model:provider.upstreamModel},this.pubkey);
     return {nodes,edges,scope:'Known trusted peers and linked browser devices'};
   }
@@ -215,15 +217,14 @@ export class Service extends EventEmitter {
       for await (const part of (browser ? this.browserWorkers : donated ? this.providers : this.ollama).chat(job, signal)) {
         if (['delta', 'tool_calls'].includes(part.type) && !firstAt) {
           firstAt = performance.now();
-          const metric = this.modelMetrics[job.model] ??= {};
-          metric.firstTokenMs = metric.firstTokenMs == null ? firstAt - started : metric.firstTokenMs * 0.7 + (firstAt - started) * 0.3;
+
         }
         if (part.type === 'done') {
           const credits = usageCredits(part.promptTokens ?? 0, part.tokens ?? 0);
           if (part.tokens > job.maxTokens || part.promptTokens > job.contextTokens) throw new Error('Runtime exceeded token budget');
           if (input.payment) this.ledger.db.prepare('UPDATE worker_payments SET credits=? WHERE id=?').run(credits, input.payment.id);
           if(!auxiliary)this.loadedModel = job.model;
-          if (firstAt && part.tokens > 0) (this.modelMetrics[job.model] ??= {}).tokensPerSecond = part.tokens / Math.max(0.001, (performance.now() - firstAt) / 1000);
+          if(!auxiliary&&firstAt)recordInference(this.modelMetrics[job.model]??={}, {firstTokenMs:firstAt-started,tokens:part.tokens,durationMs:performance.now()-started});
         }
         yield part;
       }
@@ -238,7 +239,7 @@ export class Service extends EventEmitter {
       seen:Date.now(),latencyMs:0,metrics:{[instance.model]:instance.metrics},loadedModel:instance.state==='ready'?instance.model:null,hardware:this.hardwareSummary(),local:true,wallet:this.payments?.wallet.address,contribution:this.contributionLevel});
     else candidates.push({ pubkey: this.pubkey, models: this.nativeModels(), contribution: this.profile?.level ?? 'low', busy: Number(Boolean(this.localEnergyJobs || this.installing || this.draining)), seen: Date.now(),
       latencyMs: 0, metrics: this.modelMetrics, loadedModel: this.loadedModel, hardware: this.hardwareSummary(), local: true, wallet: this.payments?.wallet.address });
-    for(const instance of this.browserWorkers.snapshot())candidates.push({pubkey:this.pubkey,instanceId:instance.id,models:[instance.model],busy:this.draining||!instance.free?1:0,free:instance.free,seen:Date.now(),latencyMs:5,hardware:{mode:'gpu',maxModelRank:1},local:true,supportsTools:instance.supportsTools,maxContextTokens:4096,source:instance.community?'community':undefined,wallet:this.payments?.wallet.address});
+    for(const instance of this.browserWorkers.snapshot())candidates.push({pubkey:this.pubkey,instanceId:instance.id,models:[instance.model],busy:this.draining||!instance.free?1:0,free:instance.free,seen:Date.now(),latencyMs:5,metrics:{[instance.model]:instance.metrics},hardware:{mode:'gpu',maxModelRank:1},local:true,supportsTools:instance.supportsTools,maxContextTokens:4096,source:instance.community?'community':undefined,wallet:this.payments?.wallet.address});
     for(const instance of this.providers.snapshot())candidates.push({pubkey:this.pubkey,instanceId:instance.id,models:[instance.model],modelCatalog:[instance.modelInfo],source:'third-party',creditBudget:instance.remainingCredits,requestTokenLimit:instance.requestTokenLimit,unavailableReason:instance.state==='ready'?undefined:instance.provider+' '+instance.upstreamModel+': '+instance.state+(instance.error?' ('+instance.error+')':''),busy:this.draining||!instance.free?1:0,free:instance.free,total:1,seen:Date.now(),latencyMs:0,metrics:{[instance.model]:instance.metrics},local:true,wallet:this.payments?.wallet.address});
     for(const candidate of candidates) {
       const key=candidate.pubkey+':'+(candidate.instanceId??'legacy');const reserved=this.reservations.get(key)??0;

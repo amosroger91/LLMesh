@@ -57,7 +57,8 @@ app.on('browser-window-created', (_event, window) => {
       const mockChat=async (_event, job) => {
         chats.push(job); assert.equal(job.model, 'llmesh-auto');
         window.webContents.send('route', { reason: 'Smoke route: local mesh worker' });
-        window.webContents.send('delta', 'Mesh ');
+        window.webContents.send('delta', '<thi');
+        window.webContents.send('delta', 'nk>\n'+(chats.length===2?'Private test reasoning':'')+'\n</think>\nMesh ');
         window.webContents.send('delta', 'response');
         await new Promise(resolve => setTimeout(resolve, 30));
         return { model: 'qwen3.5:0.8b', worker: 'smoke-worker', credits: 1, route: { settlement: 'local-self' } };
@@ -88,6 +89,19 @@ app.on('browser-window-created', (_event, window) => {
         })()`);
       }
       assert.equal(chats.length, 3);
+      await window.webContents.executeJavaScript(`(async()=>{
+        const {renderNetwork}=await import(new URL('../browser/network-map.js',location.href));
+        const container=document.createElement('div');
+        renderNetwork(container,{nodes:[{id:'working',name:'Working worker',kind:'browser',ready:true,connected:true,busy:true}],edges:[]});
+        if(!container.querySelector('animateTransform'))throw new Error('Working node lacks a spinner');
+        if(!container.querySelector('[stroke="#f5cc55"]'))throw new Error('Working status is not yellow');
+        renderNetwork(container,{nodes:[{id:'ready',name:'Ready worker',kind:'browser',ready:true,connected:true}],edges:[]});
+        if(container.querySelector('animateTransform'))throw new Error('Idle node still spins');
+        if(!container.querySelector('[stroke="#65df85"]'))throw new Error('Ready status is not green');
+      })()`);
+      assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('#companion-history details').length`),1);
+      assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#companion-history details').open`),false);
+      assert.equal(await window.webContents.executeJavaScript(`document.getElementById('companion-history').textContent.includes('<think>')`),false);
       assert.deepEqual(chats[2].messages.slice(-3), [
         { role: 'user', content: 'Smoke mesh chat' }, { role: 'assistant', content: 'Mesh response' }, { role: 'user', content: 'Follow-up' }
       ]);

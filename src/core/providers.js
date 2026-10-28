@@ -1,3 +1,4 @@
+import {recordInference} from '../shared/inference-metrics.js';
 import {randomUUID} from 'node:crypto';
 import {usageCredits} from './pricing.js';
 
@@ -82,8 +83,8 @@ export class ProviderPool {
         while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);if(!line.startsWith('data:'))continue;const data=line.slice(5).trim();if(data==='[DONE]')continue;
           const chunk=JSON.parse(data);if(chunk.error)throw new Error('Provider failed inference');if(typeof chunk.model==='string')reportedModel=chunk.model.slice(0,200);if(chunk.usage??chunk.x_groq?.usage)usage=chunk.usage??chunk.x_groq?.usage;
           const choice=chunk.choices?.[0];if(choice?.finish_reason)finishReason=choice.finish_reason;
-          const text=choice?.delta?.content;if(typeof text==='string'&&text){outputBytes+=Buffer.byteLength(text);if(outputBytes>262144)throw new Error('Provider response too large');if(!firstAt){firstAt=performance.now();provider.metrics.firstTokenMs=firstAt-started;}yield{type:'delta',text};}
-          for(const call of choice?.delta?.tool_calls??[]){if(!Number.isInteger(call.index)||call.index<0||call.index>=128)throw new Error('Invalid provider tool calls');const current=calls.get(call.index)??{index:call.index,id:'',type:'function',function:{name:'',arguments:''}};
+          const text=choice?.delta?.content;if(typeof text==='string'&&text){outputBytes+=Buffer.byteLength(text);if(outputBytes>262144)throw new Error('Provider response too large');if(!firstAt){firstAt=performance.now();}yield{type:'delta',text};}
+          for(const call of choice?.delta?.tool_calls??[]){firstAt??=performance.now();if(!Number.isInteger(call.index)||call.index<0||call.index>=128)throw new Error('Invalid provider tool calls');const current=calls.get(call.index)??{index:call.index,id:'',type:'function',function:{name:'',arguments:''}};
             current.id+=call.id??'';current.function.name+=call.function?.name??'';current.function.arguments+=call.function?.arguments??'';if(JSON.stringify(current).length>131072)throw new Error('Provider tool call too large');calls.set(call.index,current);}
         }
       }
@@ -92,7 +93,7 @@ export class ProviderPool {
       this.db.prepare('UPDATE provider_usage SET input_tokens=input_tokens+?,output_tokens=output_tokens+?,requests=requests+1 WHERE provider=? AND day=?').run(usage.prompt_tokens,usage.completion_tokens,provider.id,day);
       this.db.prepare('INSERT INTO provider_calls VALUES (?,?,?,?,?,?,?)').run(randomUUID(),provider.id,provider.model,reportedModel??null,usage.prompt_tokens,usage.completion_tokens,Date.now());
       if(calls.size)yield{type:'tool_calls',calls:[...calls.values()]};
-      provider.metrics.tokensPerSecond=usage.completion_tokens/Math.max(.001,(performance.now()-(firstAt??started))/1000);provider.error=null;
+      recordInference(provider.metrics,{firstTokenMs:(firstAt??performance.now())-started,tokens:usage.completion_tokens,durationMs:performance.now()-started});provider.error=null;
       yield{type:'done',tokens:usage.completion_tokens,promptTokens:usage.prompt_tokens,finishReason};
     }catch(error){provider.error=error.message;if(!error.providerRejected)provider.cooldown=Math.max(provider.cooldown,Date.now()+60000);
       // Failed/unknown usage consumes its full local authorization conservatively.

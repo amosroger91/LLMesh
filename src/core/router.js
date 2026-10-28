@@ -33,10 +33,10 @@ function estimate(worker, model, maxTokens) {
   const first = metric?.firstTokenMs ?? (legacy ? worker.firstTokenMs : undefined) ?? fallbackFirst;
   const speed = metric?.tokensPerSecond ?? (legacy ? worker.tokensPerSecond : undefined) ?? (worker.source==='third-party'?100:Math.max(1, (mode === 'cpu' ? 12 : 90) / Math.sqrt(model.parametersB)));
   const latency = worker.latencyMs ?? 100;
-  // First-token latency dominates; longer jobs also account for expected generation time.
+  // Rank expected completion time, including observed first-token delay and throughput.
   return { firstTokenMs: first + latency, completionMs: first + latency + maxTokens / speed * 1000,
-    score: first + latency + maxTokens / speed * 1000 * 0.15,
-    basis: metric ? 'observed for this model' : legacy && worker.firstTokenMs != null ? 'legacy worker estimate' : 'hardware/model estimate' };
+    score: first + latency + maxTokens / speed * 1000,
+    tokensPerSecond:speed, samples:metric?.samples??0, basis: Number.isFinite(metric?.firstTokenMs)||Number.isFinite(metric?.tokensPerSecond) ? 'observed for this model' : legacy && worker.firstTokenMs != null ? 'legacy worker estimate' : 'hardware/model estimate' };
 }
 
 export function planRoute(job, workers, now = Date.now()) {

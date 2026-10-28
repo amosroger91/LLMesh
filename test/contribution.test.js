@@ -54,3 +54,21 @@ test('relaxed checks attempt the smallest CPU model on an occupied 6GB GPU syste
   assert.equal(chooseContribution({ ...occupied, freeRamGB: 2.5 }).model, null);
   assert.equal(chooseContribution({ ...occupied, gpus: [{ vramGB: 6, freeGB: 3.0 }] }).mode, 'gpu');
 });
+
+test('manual memory override attempts a physically fitting model without relying on free memory',()=>{
+ const occupied={...hardware,freeRamGB:0.2,gpus:[]};
+ assert.equal(chooseContribution(occupied,'medium').model,null);
+ const forced=chooseContribution(occupied,'medium',{forceMemory:true});assert.ok(forced.model);assert.ok(forced.placement.warnings.some(warning=>warning.includes('overridden')));
+ assert.equal(chooseContribution({...occupied,ramGB:0.5},'medium',{forceMemory:true}).model,null);
+ assert.equal(chooseContribution(occupied,'medium').model,null,'Override does not change future normal planning');
+});
+
+test('service forwards the one-time override to planning, attempts loading, and keeps later attempts normal',async()=>{
+ const directory=mkdtempSync(join(tmpdir(),'llmesh-force-')),installed=[];
+ const service=new Service({directory,secret:generateSecretKey(),network:false,ollama:{async installed(){return installed;},async install(id){installed.push(id);},async unload(){},close(){}}});
+ service.scanHardware=async(level,options={})=>{service.hardware={...hardware,freeRamGB:0.2,gpus:[]};service.recommendation=recommend(service.hardware);service.proposedProfile=chooseContribution(service.hardware,level,options);return service.proposedProfile;};
+ try{await service.configureContribution('medium',{forceMemory:true});assert.ok(installed.length);assert.equal(service.setup.state,'ready');
+  await service.configureContribution('medium');assert.equal(service.setup.state,'error');assert.match(service.setup.message,/No model fits/);
+  service.busy=1;await assert.rejects(service.configureContribution('medium',{forceMemory:true}),/Finish active/);service.busy=0;
+ }finally{service.busy=0;await service.close();rmSync(directory,{recursive:true,force:true});}
+});
