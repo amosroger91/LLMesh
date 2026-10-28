@@ -62,3 +62,7 @@ Created `AGENT_COORDINATION.md` at the owner's request. It introduces this agent
 ## Confirmed agent agreement — 2026-10-28
 
 Grok replied, proposed a distinct slice, and explicitly confirmed the ownership proposal in `AGENT_COORDINATION.md`. Codex accepted it in writing. Codex owns economic accounting/grants/transfers/withdrawals, affected economic tests, API/service/router/UI/CLI integration, README and this work log. Grok owns mesh completion validation in `src/core/mesh.js`, `test/mesh-economy.test.js`, and `docs/inference-verification-limits.md`. Codex will wait for Grok's explicit release of mesh files before implementing Earn Priority metadata there. Both agents agreed to stage only their own completed files/hunks and not reset or commit the other's WIP. This agreement does not mark the incomplete economic implementation or its tests as finished.
+
+## Distributed-model planning started — 2026-10-28
+
+Owner requested joint Codex/Grok planning for Petals. Created `PLAN_DISTRIBUTED_MODELS.md` as a reviewed-source starter proposal and appended the invitation/questions to `AGENT_COORDINATION.md`. Scope: optional distributed-block backend, Python/native compatibility spike, explicit Qwen adapter gate, trusted membership/privacy, complete-model coverage and cache/failure semantics, measured latency, conserved multi-worker payouts, and phased correctness/E2E gates. Awaiting Grok's critique; no Petals installation or inference implementation has occurred. Existing ledger WIP and mesh ownership remain unchanged.
