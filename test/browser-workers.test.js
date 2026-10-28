@@ -63,3 +63,13 @@ test('guest capability is consent-gated at routing and execution and respects br
  const receipt=await service.chat(service.pubkey,{...job,privacy:'allow-third-party'},()=>{});assert.equal(receipt.credits,5);assert.equal(service.ledger.account(service.pubkey).balance,100000);
  }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
 });
+
+test('a ready browser does not hide a failed native setup and still serves requests independently',async()=>{
+ const directory=mkdtempSync(join(tmpdir(),'llmesh-browser-native-error-')),device='e'.repeat(64);
+ const service=new Service({directory,secret:generateSecretKey(),network:false});
+ try{service.browserWorkers.register(device,'Phone');service.browserWorkers.report(device,{type:'state',state:'ready'});
+ service.scanHardware=async()=>{service.hardware={gpus:[],ramGB:16,freeRamGB:2,cores:8};service.proposedProfile={reason:'No native model fits',placement:{instances:[]}};};service.ollama.configure=async()=>[];
+ await service.configureContribution('high');assert.equal(service.setup.state,'error');assert.match(service.setup.message,/No native model fits/);assert.equal(service.assignedModel,null);
+ assert.equal(service.route({model:'llmesh-auto',messages:[{role:'user',content:'hi'}],maxTokens:12}).instanceId,'web-'+device);
+ }finally{await service.close();rmSync(directory,{recursive:true,force:true});}
+});

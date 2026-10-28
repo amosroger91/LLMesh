@@ -118,7 +118,7 @@ export class Service extends EventEmitter {
         await this.ollama.stopInstances(); await this.scanHardware(level); this.profile=this.proposedProfile; this.assignedModel=null;
         this.setup={state:'installing',message:this.profile.reason};
         await this.ollama.configure(this.profile.placement,this.hardware,item=>{this.setup={...this.setup,message:item.status,completed:item.completed,total:item.total};this.emit('progress',item);});
-        this.ready=this.servingModels(); if(!this.ready.length)throw new Error(this.ollama.instances.map(instance=>instance.error).filter(Boolean).join('; ')||this.profile.reason);
+        this.ready=this.nativeModels(); if(!this.ready.length)throw new Error(this.ollama.instances.map(instance=>instance.error).filter(Boolean).join('; ')||this.profile.reason);
         this.assignedModel=this.loadedModel=this.ready[0];this.profile={...this.profile,model:catalog.models.find(model=>model.id===this.ready[0])};
         this.setup={state:'ready',message:`${this.ready.join(', ')} ready across ${this.ollama.instances.filter(instance=>instance.state==='ready').length} instances.`}; return this.status();
       }
