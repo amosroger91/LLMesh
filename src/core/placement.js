@@ -33,7 +33,7 @@ export function planPlacement(hardware, { level = 'medium', gpuSelection = 'auto
       selected = selected.filter(gpu => gpuSelection.some(id => gpu.uuid === String(id) || String(gpu.index) === String(id)));
     } else if (gpuSelection === 'auto') selected = selected.filter(gpu => !gpu.integrated && !/\b(uhd|iris|apu)\b/i.test(gpu.name) && gpu.vramGB >= 2);
     selected = selected.map(gpu => ({ ...gpu, budget: Math.max(0, (gpu.freeGB ?? gpu.vramGB) - 0.75 * parallel -
-      (hardware.platform === 'win32' && gpuSelection === 'auto' && gpu.index === displayGpu ? 1.5 : 0)) * policy.fraction }));
+      (gpu.freeGB == null && hardware.platform === 'win32' && gpuSelection === 'auto' && gpu.index === displayGpu ? 1.5 : 0)) * policy.fraction }));
     selected.sort((a,b) => b.budget - a.budget || a.uuid.localeCompare(b.uuid));
     if (level === 'low') selected = selected.slice(0,1);
     for (const backend of [...new Set(selected.map(gpu => gpu.backend))]) {

@@ -237,6 +237,7 @@ export class Service extends EventEmitter {
       if (!candidates.some(worker => worker.models.length && worker.busy === 0)) {
         throw new Error(`No inference worker is ready. Your node: ${this.setup.message} Other workers may be offline or busy.`, {cause:error});
       }
+      if(this.setup.state!=='ready')throw new Error(`${error.message} Your native node: ${this.setup.message}`,{cause:error});
       throw error;
     }
   }

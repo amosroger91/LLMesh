@@ -58,3 +58,11 @@ test('reservations grow with context and output limits, never model size or cont
  assert.equal(quoteWork({parametersB:27},message('Hello'),512).reservedCredits,4608);
  assert.throws(()=>quoteWork({},[],512),/unknown model/);
 });
+
+test('routing reports tool, context and privacy exclusions instead of blaming simple complexity',()=>{
+ const browser={...node('phone',[small]),supportsTools:false,maxContextTokens:4096};
+ const job={model:'llmesh-auto',messages:message('Hello'),maxTokens:512};
+ assert.throws(()=>planRoute({...job,tools:[{}]},[browser]),/do not support tool calls/);
+ assert.throws(()=>planRoute({...job,contextTokens:8192},[browser]),/8192 context tokens/);
+ assert.throws(()=>planRoute(job,[{...browser,source:'community'}]),/privacy setting/);
+});

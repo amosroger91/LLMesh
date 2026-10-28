@@ -11719,7 +11719,7 @@
           "parallel": 1,
           "requestedParallel": 1,
           "mode": "split",
-          "memoryBudgetGB": 21.75,
+          "memoryBudgetGB": 22.875,
           "threads": 4,
           "keepAlive": "15m",
           "batch": 128

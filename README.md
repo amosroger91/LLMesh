@@ -335,3 +335,8 @@ Browser data-channel messages are fragmented below WebRTC message limits, and br
 
 
 The desktop **Network map** now includes both the connected compute graph and a separate **Public discovery** graph matching the web app. Discovered sessions are not automatically trusted. Browser workers are marked **Guest donation** or **Linked harvesting** so their account mode is visible. Device totals exclude donated API endpoints. The desktop also includes QR pairing/revocation, donated API controls, hardware/contribution setup, metered credit accounting, and the mesh companion. Run `npm start` from the repository to rebuild the desktop UI before launching the current code.
+
+
+OpenCode compatibility: native workers handle tool calls; current WebLLM browser workers cannot. Routing now reports tool support, context limits, and privacy exclusions directly instead of presenting every failure as insufficient complexity. Native setup failures are included in the error. On Windows, measured **free** VRAM already excludes display allocations, so placement keeps the runtime reserve without subtracting the display allocation again; the additional display reserve applies only when free VRAM is unknown. Node and Rust share this rule. Actual runtime allocation and fallback still determine whether the model can load.
+
+Verified on the RTX 3050 desktop after that placement fix: the local OpenAI-compatible endpoint selected `qwen3.5:0.8b`, returned HTTP 200, emitted a real `ping` function call with `finish_reason: tool_calls`, and metered input/output usage. This checks actual native inference, not a mocked model response.

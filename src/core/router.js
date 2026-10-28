@@ -41,20 +41,23 @@ function estimate(worker, model, maxTokens) {
 export function planRoute(job, workers, now = Date.now()) {
   const complexity = assessComplexity(job.messages, job.complexity ?? 'auto', job.maxTokens);
   const automatic = !job.model || ['auto', AUTO_MODEL].includes(job.model);
-  let options = [];
+  let options = [];const excluded=new Set();
   const models = [...new Map([...catalog.models,...workers.flatMap(worker=>worker.modelCatalog??[])].map(model=>[model.id,model])).values()];
   for (const worker of workers) {
-    if ((['third-party','community'].includes(worker.source)&&job.privacy!=='allow-third-party') || (job.tools?.length && worker.supportsTools === false) || worker.busy !== 0 || !Number.isFinite(worker.seen) || now - worker.seen >= 35000 || worker.seen > now + 60000 ||
+    if(['third-party','community'].includes(worker.source)&&job.privacy!=='allow-third-party'){excluded.add('external workers excluded by your privacy setting');continue;}
+    if(job.tools?.length&&worker.supportsTools===false){excluded.add('available browser workers do not support tool calls; a native or tool-capable API worker is required');continue;}
+    if (worker.busy !== 0 || !Number.isFinite(worker.seen) || now - worker.seen >= 35000 || worker.seen > now + 60000 ||
         (job.workerKey && job.workerKey !== worker.pubkey)) continue;
     for (const model of models) {
       if (!worker.models.includes(model.id) || (!automatic && job.model !== model.id)) continue;
-      if(worker.maxContextTokens!=null&&(job.contextTokens??4096)>worker.maxContextTokens)continue;
+      if(worker.maxContextTokens!=null&&(job.contextTokens??4096)>worker.maxContextTokens){excluded.add(`request needs ${job.contextTokens??4096} context tokens; browser limit is ${worker.maxContextTokens}`);continue;}
       if (worker.source !== 'third-party' && Number.isFinite(worker.hardware?.maxModelRank) && model.rank > worker.hardware.maxModelRank) continue;
       const pricing = quoteWork(model, job.messages, job.maxTokens ?? 512, job.tools, job.contextTokens);
       if(worker.creditBudget!=null&&pricing.reservedCredits>worker.creditBudget)continue;
       for(let slot=0;slot<(worker.free??1);slot++)options.push({ worker, model, pricing, estimate: estimate(worker, model, job.maxTokens ?? 512) });
     }
   }
+  if(!options.length)throw new Error('No idle trusted node can run this request. '+(excluded.size?[...excluded].join('; ')+'.':'Workers may be offline, busy, or unable to serve the requested model.'));
   let degraded = false;
   if (automatic) {
     const capable = options.filter(option => option.model.rank >= complexity.minimumRank);

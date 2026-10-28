@@ -195,7 +195,8 @@ pub fn plan_placement(hardware: &Value, options: &Value) -> Result<Value, String
                     "vulkan"
                 })
                 .to_owned();
-            let reserve = if hardware["platform"] == "win32"
+            let reserve = if gpu["freeGB"].is_null()
+                && hardware["platform"] == "win32"
                 && selection == "auto"
                 && index == options["displayGpu"].as_u64().unwrap_or(0)
             {

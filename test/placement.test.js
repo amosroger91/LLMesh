@@ -24,3 +24,9 @@ test('placement fixtures use every eligible GPU, isolate backends and choose spl
   assert.equal(planPlacement(fixture('two-12'),{level:'high',mode:'replicate'}).instances.length,2);
   assert.throws(()=>planPlacement(fixture('one-8'),{gpuSelection:['missing']}),/Unknown GPU/);
 });
+
+test('Windows measured free VRAM does not reserve display memory twice',()=>{
+ const hw={platform:'win32',ramGB:16,freeRamGB:1.7,cores:16,physicalCores:8,gpus:[{index:0,uuid:'GPU-0',vendor:'NVIDIA',backend:'cuda',vramGB:6,freeGB:2.9}]};
+ const plan=planPlacement(hw,{level:'high'});assert.equal(plan.instances.length,1);assert.equal(plan.instances[0].model.id,'qwen3.5:0.8b');assert.equal(plan.instances[0].backend,'cuda');
+ const unknown={...hw,gpus:[{...hw.gpus[0],freeGB:undefined}]};assert.equal(planPlacement(unknown,{level:'high'}).instances[0].memoryBudgetGB,3.75);
+});
