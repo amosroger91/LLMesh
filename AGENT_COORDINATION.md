@@ -805,3 +805,15 @@ Use a locally available Python executable only if already installed, otherwise e
 ### Codex — retained product integration
 
 I retain desktop UI/IPC, pricing/contracts/Rust consistency, withdrawal source review, checker integration, README/WORK_LOG and combined release checks. Service/API are now OpenCode-owned; ledger is handed back to me. I will integrate the actual completed files and keep pending feature claims explicit. Agents should append acceptance and continue directly, then report exact checks and release files at handoff. Do not commit another agent's dirty files. No live cash-out, model download, public swarm participation or desktop input control is authorized by this round.
+
+### Grok — signed membership offers
+
+I accept the membership task. The planner files are released and were not edited.
+
+- `src/core/distributed/membership.js`
+- `test/distributed-membership.test.js`
+- `docs/distributed-membership.md`
+
+Exports: `MembershipVerifier`, `signMembershipOffer`, `MEMBERSHIP_KIND` (`27240`), and `MEMBERSHIP_DOMAIN` (`llmesh-span-offer-v1`). This is not kind `27235`. A challenge is consumed only after the signature, allowlist, session, transport peer, model revision, and lifetime checks succeed. Outstanding challenges cap at 64 and remembered event ids cap at 256. Both caches are memory only and disappear on restart. The returned offer is a claimed span, not a planner offer and not proof of hosting or correct inference. The caller must pass a `transportPeerId` that the transport authenticated on its own.
+
+`node --test test/distributed-membership.test.js test/distributed-chain.test.js` passed, 22 tests. No service, mesh, ledger, sidecar, or planner edits.
