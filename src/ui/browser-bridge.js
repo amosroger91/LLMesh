@@ -34,7 +34,7 @@ export function browserBridge(api){
     });
     await new Promise((resolve,reject)=>{peer.once('open',resolve);peer.once('error',reject);setTimeout(()=>reject(new Error('Signaling unavailable; retry QR setup')),15000);});
   }
-  starting=createPeer();void starting.then(async()=>{const gateway={peerId:peer.id,publicKey:await publicKey(key),nonce:guestNonce};presence=new Presence(()=>({kind:'desktop',name:'Desktop gateway',gateway}),()=>{});}).catch(error=>note('Public discovery unavailable: '+error.message));
+  starting=createPeer();void starting.then(async()=>{const gateway={peerId:peer.id,publicKey:await publicKey(key),nonce:guestNonce};presence=new Presence(()=>({kind:'desktop',name:'Desktop gateway',gateway}),nodes=>{renderNetwork(document.getElementById('public-network-map'),{nodes,edges:[]});document.getElementById('public-network-count').textContent=nodes.length+' public sessions visible · including this desktop';});}).catch(error=>{note('Public discovery unavailable: '+error.message);document.getElementById('public-network-count').textContent='Discovery unavailable · '+error.message;});
   window.addEventListener('pagehide',()=>{presence?.close();peer?.destroy();});
   document.getElementById('pair-create').onclick=async()=>{try{note('Connecting to peer signaling…');await starting;if(!peer||peer.destroyed)await createPeer();
     certificate=await api.browserPair({peerId:peer.id,publicKey:await publicKey(key)});pair=JSON.parse(certificate.content);
@@ -44,8 +44,8 @@ export function browserBridge(api){
     document.getElementById('pair-qr').hidden=false;note('Scan from the web app or your phone camera. Expires in two minutes; approve the device below.');
   }catch(error){note(error.message);}};
   const refresh=()=>{void api.status().then(state=>{const topology=state.topology;renderNetwork(document.getElementById('network-map'),topology);
-    document.getElementById('network-count').textContent=topology.nodes.length+' devices online';
-    const list=document.getElementById('linked-devices');list.replaceChildren();for(const device of state.browserDevices){const row=document.createElement('div');row.className='session';const label=document.createElement('span');label.textContent=`${device.name} · ${device.state} · ${device.engineModel||'No model loaded'}`;const remove=document.createElement('button');remove.className='secondary';remove.textContent='Revoke';remove.onclick=()=>api.browserRemove(device.deviceId);row.append(label,remove);list.append(row);}
+    document.getElementById('network-count').textContent=topology.nodes.filter(node=>node.kind!=='provider').length+' devices online';
+    const list=document.getElementById('linked-devices');list.replaceChildren();for(const device of state.browserDevices){const row=document.createElement('div');row.className='session';const label=document.createElement('span');label.textContent=`${device.name} · ${device.community?'Guest donation':'Linked harvesting'} · ${device.state} · ${device.engineModel||'No model loaded'}`;const remove=document.createElement('button');remove.className='secondary';remove.textContent='Revoke';remove.onclick=()=>api.browserRemove(device.deviceId);row.append(label,remove);list.append(row);}
     for(const session of sessions.values())void session.channel.send({type:'network',topology}).catch(()=>session.connection.close());
   }).catch(error=>note(error.message));};
   refresh();setInterval(refresh,3000);

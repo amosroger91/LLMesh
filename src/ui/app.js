@@ -42,7 +42,7 @@ function renderPayments(payment) {
 async function refresh() {
   state = await api.status();
   $('memory').textContent = `${state.hardware.freeRamGB.toFixed(1)} GB free RAM`;
-  $('online').textContent = state.topology?.nodes.length ?? new Set(state.workers.map(worker=>worker.pubkey)).size + 1;
+  $('online').textContent = state.topology?.nodes.filter(node=>node.kind!=='provider').length ?? new Set(state.workers.map(worker=>worker.pubkey)).size + 1;
   $('network').textContent = state.workers.length ? 'Inference mesh connected' : 'Local inference node';
   $('peers').textContent = `Your node + ${state.workers.length} remote worker${state.workers.length === 1 ? '' : 's'}`;
   const profile = state.contribution, chosen = state.assignedModel ?? profile?.model?.id;
