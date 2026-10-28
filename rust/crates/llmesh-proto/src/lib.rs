@@ -3,8 +3,7 @@
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{Value, json};
 pub const STARTER_CREDITS: u32 = 100_000;
-pub const QUOTE_BASIS: &str =
-    "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens";
+pub const QUOTE_BASIS: &str = "Refundable maximum reservation; final credits follow the model rate times reported input plus generated tokens";
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Model {
@@ -98,11 +97,18 @@ pub fn atoms_per_token(parameters: f64) -> Result<u32, &'static str> {
         Ok(3)
     }
 }
-pub fn usage_credits(prompt: u32, output: u32, reserved: u32, atoms_per_token: u32) -> Result<u32, &'static str> {
+pub fn usage_credits(
+    prompt: u32,
+    output: u32,
+    reserved: u32,
+    atoms_per_token: u32,
+) -> Result<u32, &'static str> {
     if prompt > 32768 || output > 2048 || !(1..=3).contains(&atoms_per_token) {
         return Err("Invalid or over-budget inference token usage");
     }
-    let atoms = prompt.saturating_add(output).saturating_mul(atoms_per_token);
+    let atoms = prompt
+        .saturating_add(output)
+        .saturating_mul(atoms_per_token);
     if atoms > reserved || prompt.checked_add(output).is_none() {
         return Err("Invalid or over-budget inference token usage");
     }
