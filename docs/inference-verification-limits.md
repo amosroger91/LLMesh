@@ -18,4 +18,4 @@ The coordinator does not re-tokenize the prompt with the worker's tokenizer. A s
 
 A receipt means this coordinator accepted this usage report. It does not prove the answer was correct, and a trusted coordinator can still overstate the balance it reports. Promotional or otherwise unbacked credits are not a withdrawal balance. No production funding proof or cash-out is implemented here.
 
-Distributed block chains, if added later, have the same limit: the span that sees token inputs can read the prompt, and later spans see activations. That design is planned in `PLAN_DISTRIBUTED_MODELS.md` and is not implemented.
+`src/core/distributed/chain.js` is a fake block planner. It can split one test charge across span hosts. It does not run a model, move tensors, or prove an answer. A real chain would have the same limit: the span that sees token inputs can read the prompt, and later spans see activations. That runtime is still only a plan in `PLAN_DISTRIBUTED_MODELS.md`.
