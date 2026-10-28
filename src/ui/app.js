@@ -104,7 +104,7 @@ document.querySelectorAll('[data-level]').forEach(button => { button.onclick = a
 bind('retry-setup', () => task('retry-setup', async () => { await api.contribution(state.pendingContribution ?? state.contributionLevel); await refresh(); }));
 async function runInference(job, target, privacy=$('privacy-mode').value,companion=false) {
   if (inferenceActive) throw new Error('A request is already running');
-  inferenceActive = true; $('send').disabled = $('companion-send').disabled = true;
+  inferenceActive = true; $('send').disabled = $('companion-send').disabled = $('companion-clear').disabled = true;
   outputNode = document.createTextNode(''); target.append(outputNode);
   try {
     const receipt = await (companion?api.companionChat:api.chat)({...job,privacy,...(companion?{hardwareOnly:true}:{})});
@@ -112,7 +112,7 @@ async function runInference(job, target, privacy=$('privacy-mode').value,compani
     for (const id of ['route-status', 'companion-route']) $(id).textContent = detail + (receipt.route.degraded ? ' · Below recommended tier' : '');
     return { receipt, text: outputNode.textContent };
   } finally {
-    outputNode = null; inferenceActive = false; $('send').disabled = $('companion-send').disabled = false; await refresh();
+    outputNode = null; inferenceActive = false; $('send').disabled = $('companion-send').disabled = $('companion-clear').disabled = false; await refresh();
   }
 }
 bind('send', async () => {
@@ -144,6 +144,12 @@ bind('wallet-register', () => task('wallet-register', async () => renderPayments
 bind('wallet-refund', () => task('wallet-refund', async () => { const transaction = await api.refundPayment($('wallet-refund-id').value.trim()); $('wallet-status').textContent = 'Refund confirmed: ' + transaction; }));
 
 bind('companion-stop', () => api.cancel());
+bind('companion-clear', async () => {
+  if (inferenceActive || !store) return;
+  await store.set('companion-history', []); companionHistory = [];
+  $('companion-history').replaceChildren(); $('companion-prompt').value = '';
+  $('companion-route').textContent = 'Chat cleared. Your next message starts a new hardware-only conversation.';
+});
 bind('companion-send', async () => {
   const prompt = $('companion-prompt').value.trim(); if (!prompt || inferenceActive) return;
   const messages = [...companionHistory, { role: 'user', content: prompt }].slice(-12);

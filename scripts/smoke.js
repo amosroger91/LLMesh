@@ -91,6 +91,15 @@ app.on('browser-window-created', (_event, window) => {
       assert.deepEqual(chats[2].messages.slice(-3), [
         { role: 'user', content: 'Smoke mesh chat' }, { role: 'assistant', content: 'Mesh response' }, { role: 'user', content: 'Follow-up' }
       ]);
+      await window.webContents.executeJavaScript(`(async () => {
+        document.getElementById('companion-prompt').value = 'Unsent draft';
+        document.getElementById('companion-clear').click();
+        for (let i = 0; i < 100; i++) {
+          await new Promise(resolve => setTimeout(resolve, 20));
+          if (!document.getElementById('companion-history').children.length && !document.getElementById('companion-prompt').value) return;
+        }
+        throw new Error('Clear chat did not clear conversation and draft');
+      })()`);
       const offline = await window.webContents.executeJavaScript(`(async () => {
         const state = await window.llmesh.status();
         return { apiSecretWithheld: state.apiKey === undefined, paymentConfigured: state.payments.configured };
