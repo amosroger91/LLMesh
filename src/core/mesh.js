@@ -164,16 +164,25 @@ export class Mesh extends EventEmitter {
           const metric = (peer.metrics ??= {})[task.model] ??= {};
           metric.firstTokenMs = metric.firstTokenMs == null ? sample : metric.firstTokenMs * 0.7 + sample * 0.3;
         }
+        if (msg.text.trim()) task.sawOutput = true;
         task.onDelta(msg.text);
       } else if (msg.type === 'tool_calls') {
         if (!Array.isArray(msg.calls) || msg.calls.length > 128 ||
             msg.calls.some(call => !Number.isInteger(call.index) || call.index < 0 || call.index >= 128 || typeof call.id !== 'string' || call.id.length > 200 ||
               call.type !== 'function' || typeof call.function?.name !== 'string' || typeof call.function.arguments !== 'string') ||
             (task.bytes += Buffer.byteLength(JSON.stringify(msg.calls))) > 262144) throw new Error('Invalid worker tool calls');
-        if(!task.firstAt){task.firstAt=performance.now();task.buffered=true;}task.onDelta({ type: 'tool_calls', calls: msg.calls });
+        if(!task.firstAt){task.firstAt=performance.now();task.buffered=true;}
+        task.sawOutput = true;
+        task.onDelta({ type: 'tool_calls', calls: msg.calls });
       } else if (msg.type === 'done') {
+        const promptTokens = msg.promptTokens ?? 0;
+        const contextTokens = task.contextTokens ?? 32768;
+        let refusal;
         if (!Number.isSafeInteger(msg.tokens) || msg.tokens < 0 || msg.tokens > task.maxTokens ||
-            !Number.isSafeInteger(msg.promptTokens ?? 0) || (msg.promptTokens ?? 0) < 0 || (msg.promptTokens ?? 0) > 32768) throw new Error('Invalid worker token usage');
+            !Number.isSafeInteger(promptTokens) || promptTokens < 0 || promptTokens > 32768) refusal = 'Invalid worker token usage';
+        else if (promptTokens > contextTokens) refusal = 'Worker reported prompt tokens above the reserved context';
+        else if (msg.tokens > 0 && !task.sawOutput) refusal = 'Worker reported output tokens without returning output';
+        if (refusal) { this.pending.delete(msg.id); task.reject(new Error(refusal)); return; }
         if(task.firstAt){const metric=(peer.instanceMetrics??={})[task.instanceId??task.model]??={};recordInference(metric,{firstTokenMs:Math.max(0,task.firstAt-task.started-(peer.latencyMs??0)),tokens:msg.tokens,durationMs:Math.max(0,performance.now()-task.started-(peer.latencyMs??0)),buffered:task.buffered});peer.tokensPerSecond=metric.tokensPerSecond;}
         peer.loadedModel = task.model;
         this.pending.delete(msg.id); task.resolve({ worker: peer.pubkey, tokens: msg.tokens,
@@ -214,7 +223,7 @@ export class Mesh extends EventEmitter {
     try {
       return await new Promise((resolve, reject) => {
         const abort = () => { this.pending.delete(id); this.send(peer, { type: 'cancel', id }).catch(() => {}); reject(new Error('Request cancelled or timed out')); };
-        this.pending.set(id, { peer, onDelta, bytes: 0, resolve, reject, instanceId:job.instanceId,started: performance.now(), maxTokens: job.maxTokens, model: job.model });
+        this.pending.set(id, { peer, onDelta, bytes: 0, sawOutput: false, contextTokens: job.contextTokens ?? 32768, resolve, reject, instanceId:job.instanceId,started: performance.now(), maxTokens: job.maxTokens, model: job.model });
         signal.addEventListener('abort', abort, { once: true });
         // Remove the listener when this request settles, including disconnects.
         const pending = this.pending.get(id);
