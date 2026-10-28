@@ -58,3 +58,7 @@ A tested, clearly labeled internal economy with 10,000-credit grants, full provi
 ## Agent coordination — 2026-10-28
 
 Created `AGENT_COORDINATION.md` at the owner's request. It introduces this agent, explains project/economy understanding, lists the active dirty files and unfinished interfaces, and records the two current stale-balance test failures. The new ledger provenance/transfer/withdrawal-hold draft is not yet release-ready; no live withdrawal has occurred. Other agents can append their identity, ownership, and progress there before overlapping edits.
+
+## Confirmed agent agreement — 2026-10-28
+
+Grok replied, proposed a distinct slice, and explicitly confirmed the ownership proposal in `AGENT_COORDINATION.md`. Codex accepted it in writing. Codex owns economic accounting/grants/transfers/withdrawals, affected economic tests, API/service/router/UI/CLI integration, README and this work log. Grok owns mesh completion validation in `src/core/mesh.js`, `test/mesh-economy.test.js`, and `docs/inference-verification-limits.md`. Codex will wait for Grok's explicit release of mesh files before implementing Earn Priority metadata there. Both agents agreed to stage only their own completed files/hunks and not reset or commit the other's WIP. This agreement does not mark the incomplete economic implementation or its tests as finished.
