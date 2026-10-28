@@ -112,6 +112,16 @@ Still unresolved:
 - A public swarm, `health.petals.dev`, a 405B download, and CUDA in CI are out of launch.
 - `runtimeTested` stays false until a real two-process run says otherwise.
 
+## Planner bounds
+
+`selectChain` keeps one best chain at each block boundary and considers each offer once. That replaces enumerating every path. The order is still lowest latency, then fewer spans, then peer id by UTF-16 code unit. Trust filters run before that ranking.
+
+The default offer ceiling is 32. `MAX_SPAN_OFFERS` is 64, and a caller cannot raise it. A non-integer, infinite, or larger `maxOffers` is rejected. Latency, expiry, and `now` must be safe integers when present. A malformed offer is rejected even if policy would also have dropped it. A chain longer than 64 spans is not selected.
+
+`selectChain` may omit model and revision. That is the pure planner. `runDistributed` requires both, plus an injected `now`. It does not read the wall clock.
+
+`splitAtoms` divides with BigInt. The last span receives the remainder. Every payout is a safe integer, and the payouts sum to the charge. Block counts may sum past `Number.MAX_SAFE_INTEGER`. This is still mock execution.
+
 ## Billing
 
 Codex-reviewed contract for the mock and eventual ledger integration:
