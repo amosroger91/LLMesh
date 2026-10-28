@@ -204,7 +204,7 @@ WantedBy=multi-user.target
 | Artifact | Platform | Contents |
 | --- | --- | --- |
 | `LLMesh-Setup-x64.exe` | Windows 10/11 x64 | Electron NSIS installer, small, downloads the model on first run |
-| `LLMesh-Setup-x64-offline.exe` | Windows x64 | Same installer plus the verified 0.8B model bundle (about 1.3 GB). Optional. |
+| `LLMesh-Setup-x64-offline.exe` | Windows x64 | Same installer plus the verified 0.8B model bundle (about 1.3 GB). Built on every release. |
 | `latest.yml` + `.blockmap` | Windows | Metadata for `electron-updater` auto-updates |
 | `llmesh-linux-x64.tar.gz` / `llmesh-linux-arm64.tar.gz` | Linux | Bundled Node runtime + app + native prebuilds + `bin/llmesh` |
 | `llmesh_<ver>_amd64.deb`, `llmesh-<ver>.x86_64.rpm` (+ arm64) | Debian/Ubuntu, Fedora/RHEL | The tarball contents in `/opt/llmesh`, systemd unit, `llmesh` user, `/etc/llmesh/config.json` |
@@ -242,7 +242,11 @@ Revisit SEA later. Node's SEA can load addons from disk next to the binary, but 
   - Make the model bundle optional through a second config (`electron-builder.offline.yml`), so the default installer isn't 1.3 GB.
   - Fix `asarUnpack` to cover only native modules (*P2-10*).
   - Set stable `artifactName`.
-- **Code signing:** unsigned installers trigger SmartScreen warnings. Use Azure Trusted Signing or an OV/EV certificate, with secrets in GitHub Actions. The workflow signs only when the secrets exist, so forks still build.
+- **Code signing, at no cost:**
+  - Releases ship **unsigned**. SmartScreen will warn until signing exists, so the README download section explains the warning and how to check the installer against the cosign-signed `SHA256SUMS`.
+  - Add an OSI-approved `LICENSE`, then apply to the SignPath Foundation's free open-source signing program.
+  - The workflow has a signing step that runs only when signing secrets exist, so unsigned builds and forks keep working.
+  - Don't introduce paid signing.
 - **Auto-update:** add `electron-updater` with the GitHub provider. Check on startup and every 6 h, and install on quit. Never update while requests or settlements are in flight.
 - Drop the mac DMG and Linux AppImage targets from the default build until someone tests them. Linux users get the CLI. Desktop Linux can come back later.
 
@@ -257,7 +261,7 @@ Revisit SEA later. Node's SEA can load addons from disk next to the binary, but 
 1. **test:** same as CI.
 2. **linux:** matrix of `ubuntu-24.04` (x64) and `ubuntu-24.04-arm` (arm64). Build tarball → nfpm `.deb` / `.rpm` → upload as workflow artifacts. Smoke-test by installing the `.deb` in a `debian:bookworm` container and running `llmesh --version`.
 3. **docker:** `docker/setup-buildx-action`, then a multi-arch build of `linux/amd64,linux/arm64`, pushed to `ghcr.io` with `GITHUB_TOKEN`.
-4. **windows:** `windows-latest`, `npx electron-builder --win nsis --publish never`, then sign if secrets are present. Also build the offline variant if `vars.BUILD_OFFLINE == 'true'`, which needs `models/ollama` fetched from a release asset or cache, since it's gitignored.
+4. **windows:** `windows-latest`, `npx electron-builder --win nsis --publish never`, then sign if secrets are present. Always build the offline variant too. It needs `models/ollama`, which is gitignored, so fetch it from a pinned release asset or Ollama registry download, check every blob's SHA-256, and cache it between runs.
 5. **publish:** collect all artifacts, generate `SHA256SUMS`, sign it, and create the GitHub Release as a **draft**. A human reviews and publishes it.
 
 Cutting a release from this machine: bump `package.json` version, commit, tag `vX.Y.Z`, push the tag. The `gh` CLI isn't installed here, so use the repo's `push` skill (plain git plus the GitHub REST API). The workflow does the building.
@@ -291,13 +295,18 @@ curl -fsSL https://github.com/amosroger91/LLMesh/releases/latest/download/instal
 | **5. UI** | §1.6 | GPU table, mode selector and instance cards in the desktop app; smoke screenshots updated |
 | **6. Packaging** | §3.1–3.4 | Tarball, `.deb`, `.rpm`, Docker image and Windows installer all build locally from scripts in `scripts/release/` |
 | **7. CI/CD + downloads** | §3.5, §3.6 | Pushing a `v*` tag produces a draft release with every artifact plus signed checksums; `latest/download` links work after publishing |
-| **8. Signing + auto-update** | §3.4 | Signed installer passes SmartScreen without warnings (once the certificate has reputation); app updates itself from one release to the next |
+| **8. Signing + auto-update** | §3.4 | `LICENSE` added and the SignPath Foundation application submitted; checksums and images cosign-signed; the app updates itself from one release to the next |
 
 Phases 1–2 and 3–4 can run in parallel once phase 0 is done; they touch different files apart from `service.js`, so put the `Service` split from *CODE_REVIEW P2-4* in phase 1. Phases 6–7 can start as soon as phase 2 lands.
 
-## Open decisions for the owner
+## Decisions (made by the owner; don't reopen them)
 
-1. **Default placement on a mixed-size multi-GPU box:** prefer the biggest model (split), or the most throughput (replicate)? The plan defaults to "biggest model that fits the whole group, then fill the remaining GPUs".
-2. **Ship an offline Windows installer** with the 1.3 GB model bundle, or download-only?
-3. **Signing:** Azure Trusted Signing (cheaper, needs an identity check) or a purchased OV/EV certificate?
-4. **Linux arm64:** support it from day one (DGX Spark, Jetson, Ampere servers), or x64 only at first?
+1. **Placement favors the biggest model.** On a mixed-size box, `auto` places the largest model that fits a GPU group (split if needed), then fills the remaining GPUs with single-GPU instances. Replicate is used only when it doesn't shrink the largest model, or when the user picks it explicitly.
+2. **Ship both Windows installers on every release:** `LLMesh-Setup-x64.exe` (downloads the model) and `LLMesh-Setup-x64-offline.exe` (includes the 1.3 GB bundle). The release workflow always builds both (§3.5 step 4, no `BUILD_OFFLINE` switch).
+3. **No paid signing for now.** Spend nothing (details in §3.4):
+   - Windows installers ship unsigned, and the download page explains SmartScreen's "More info → Run anyway".
+   - Release checksums and container images are still signed, with free keyless Sigstore/cosign.
+   - Apply to the **SignPath Foundation** free code-signing program for open-source projects. It needs an OSI-approved `LICENSE` file in the repo (there's none yet; add one). If accepted, wire it into the workflow.
+   - Never add a paid certificate or service without the owner's approval.
+4. **Linux x64 and arm64 from day one,** for the tarball, `.deb`, `.rpm` and Docker. **Android is also a target:** see [PLAN_RUST_AND_ANDROID.md](PLAN_RUST_AND_ANDROID.md). It starts as a Termux CLI build, then becomes a native app on the Rust core.
+5. **Core components will be rewritten in Rust,** Linux first. See [PLAN_RUST_AND_ANDROID.md](PLAN_RUST_AND_ANDROID.md). Until the Rust daemon reaches parity, keep building the Node.js packaging in Part 3. Don't block current work on the rewrite.

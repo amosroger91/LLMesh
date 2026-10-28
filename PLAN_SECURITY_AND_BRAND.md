@@ -7,6 +7,8 @@ There are two goals:
 
 This plan builds on [PLAN_MULTI_GPU_AND_RELEASES.md](PLAN_MULTI_GPU_AND_RELEASES.md) and [CODE_REVIEW.md](CODE_REVIEW.md).
 
+**Where to build it:** phases S2–S5 (PKI, crypto profiles, end-to-end sealing, Sovereign) are implemented **in the Rust core only**, as phases R3–R4 of [PLAN_RUST_AND_ANDROID.md](PLAN_RUST_AND_ANDROID.md). S0, S1 and B1 can land in the current JS code now.
+
 ---
 
 ## 0. Read this first: what we can and can't promise
@@ -264,10 +266,22 @@ A government buyer must never see token or "earn" messaging in Sovereign. Remove
 
 S0–S1 and B1 can start now. S2–S4 are the core engineering. S5–S8 are needed before any agency pilot.
 
-## Open decisions for the owner
+## Decisions (defaults for the implementing agent; don't reopen them)
 
-1. **Which government market first?** State and local, federal civilian, or defense? This sets how strict S5–S8 must be.
-2. **Should Sovereign be a separate product name** ("LLMesh Sovereign") or just a "Government mode" switch inside LLMesh?
-3. **Default models:** keep Qwen for community and add non-Chinese-origin options for Sovereign? Or switch the default for everyone?
-4. **Budget for external reviews:** a penetration test, a cryptography review and a contract audit usually each cost tens of thousands of dollars or more. Get quotes before committing to dates.
-5. **Confidential-computing hardware for S6:** rent H100 confidential VMs from a cloud, or partner with an agency that has them?
+1. **First government market: state/local and federal civilian.** Defense (CMMC, Impact Levels, classified) stays out of scope (§4.2), but avoid anything that would prevent it later.
+2. **Sovereign is a separate edition named "LLMesh Sovereign".** Same repo and core, built with `--edition sovereign`, with its own installer and branding (§6.2).
+3. **Models:**
+   - Community keeps Qwen as the default.
+   - Sovereign defaults to a non-Chinese-origin allowlist. Pick from Gemma, IBM Granite, Microsoft Phi, Mistral or OpenAI gpt-oss after checking each license and the memory tiers in the catalog.
+   - Both editions show model origin in the catalog and UI.
+4. **No paid reviews or services right now.** The owner isn't spending money yet, so use free options:
+   - CodeQL and Semgrep in CI (free for public repos) and the OpenSSF Scorecard.
+   - Apply to **OSS-Fuzz** for continuous fuzzing, and to **OSTIF** for a sponsored audit.
+   - Do our own Tamarin/ProVerif model.
+   - Run community review through `SECURITY.md`.
+   - Paid penetration tests, crypto reviews and the contract audit wait until there's funding. Until then, docs and marketing must not claim any external review.
+5. **Confidential-computing hardware: none bought or rented.** Build the S6 attestation verifier against the vendors' published sample reports and certificate chains, and test it with those. Run real hardware tests when an agency partner or free cloud credits make an H100 confidential VM available.
+
+**Phase changes that follow from these decisions:**
+- **S6** is done when the verifier passes against vendor sample reports. The hardware test runs later.
+- **S7** is done when CodeQL, Semgrep, Scorecard and fuzzing all run in CI, the Tamarin model is merged, and the OSS-Fuzz and OSTIF applications are submitted. External reports come when funded.
