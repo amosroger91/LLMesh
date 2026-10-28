@@ -15,8 +15,10 @@ export function splitAtoms(total, spans) {
   });
 }
 
-function eligible(offer, { blockCount, allowlist, now, excludePeerIds }) {
-  if (!offer || offer.public === true || offer.busy === true || !pubkey(offer.pubkey) || !allowlist.has(offer.pubkey)) return false;
+function eligible(offer, { blockCount, allowlist, now, excludePeerIds, modelId, revision }) {
+  if (!offer || offer.public === true || offer.busy === true || offer.capable === false || !pubkey(offer.pubkey) || !allowlist.has(offer.pubkey)) return false;
+  if (modelId != null && offer.modelId !== modelId) return false;
+  if (revision != null && offer.revision !== revision) return false;
   if (typeof offer.peerId !== 'string' || !offer.peerId || excludePeerIds.has(offer.peerId)) return false;
   if (!Number.isSafeInteger(offer.start) || !Number.isSafeInteger(offer.end) || offer.start < 0 || offer.end <= offer.start || offer.end > blockCount) return false;
   if (offer.expires != null && offer.expires <= now) return false;
@@ -24,11 +26,12 @@ function eligible(offer, { blockCount, allowlist, now, excludePeerIds }) {
   return Number.isFinite(latency) && latency >= 0;
 }
 
-export function selectChain({ blockCount, offers, allowlist, now = Date.now(), excludePeerIds = [] }) {
+export function selectChain({ blockCount, offers, allowlist, now = Date.now(), excludePeerIds = [], modelId, revision, maxOffers = 32 }) {
   if (!Number.isSafeInteger(blockCount) || blockCount < 1 || blockCount > 4096) throw new Error('Invalid distributed model');
+  if (!Array.isArray(offers) || offers.length > maxOffers) throw new Error('Too many span offers');
   const trusted = new Set(allowlist ?? []);
   const banned = new Set(excludePeerIds);
-  const open = (offers ?? []).filter(offer => eligible(offer, { blockCount, allowlist: trusted, now, excludePeerIds: banned }));
+  const open = offers.filter(offer => eligible(offer, { blockCount, allowlist: trusted, now, excludePeerIds: banned, modelId, revision }));
   const found = [];
   const walk = (cursor, chain, latency) => {
     if (cursor === blockCount) {
@@ -36,7 +39,8 @@ export function selectChain({ blockCount, offers, allowlist, now = Date.now(), e
       return;
     }
     for (const offer of open) {
-      if (offer.start !== cursor || chain.some(span => span.peerId === offer.peerId)) continue;
+      // The next span must start on the current block, so a chain cannot overlap or skip.
+      if (offer.start !== cursor) continue;
       walk(offer.end, chain.concat([{ pubkey: offer.pubkey, peerId: offer.peerId, start: offer.start, end: offer.end, blocks: offer.end - offer.start, latencyMs: offer.latencyMs ?? 0 }]), latency + (offer.latencyMs ?? 0));
     }
   };
@@ -49,11 +53,11 @@ function visible(part) {
   return Boolean(part && (typeof part.text === 'string' && part.text.trim() || part.toolCall && typeof part.toolCall.name === 'string'));
 }
 
-export async function runDistributed({ ledger, payer, offers, blockCount, allowlist, reserved, used, forward, localOnly = false, hardwareOnly = false, enabled = false, now = Date.now() }) {
+export async function runDistributed({ ledger, payer, offers, blockCount, allowlist, reserved, used, forward, localOnly = false, hardwareOnly = false, enabled = false, now = Date.now(), modelId, revision, maxOffers }) {
   if (enabled !== true) throw new Error('Distributed serving is off');
   if (localOnly || hardwareOnly) throw new Error('Local-only requests stay on one machine');
   if (!Number.isSafeInteger(reserved) || !Number.isSafeInteger(used) || reserved < 1 || used < 0 || used > reserved) throw new Error('Invalid distributed charge');
-  let chain = selectChain({ blockCount, offers, allowlist, now });
+  let chain = selectChain({ blockCount, offers, allowlist, now, modelId, revision, maxOffers });
   if (!chain) throw new Error('The model is not fully hosted');
   const id = ledger.reserve(payer, reserved);
   let settled = false, sawOutput = false, rebuilt = false;
@@ -76,7 +80,7 @@ export async function runDistributed({ ledger, payer, offers, blockCount, allowl
       catch (error) {
         if (sawOutput || rebuilt) throw error;
         excluded.push(error.peerId);
-        const replacement = selectChain({ blockCount, offers, allowlist, now, excludePeerIds: excluded });
+        const replacement = selectChain({ blockCount, offers, allowlist, now, excludePeerIds: excluded, modelId, revision, maxOffers });
         if (!replacement) throw error;
         rebuilt = true;
         chain = replacement;

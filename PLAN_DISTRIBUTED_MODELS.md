@@ -1,7 +1,7 @@
 # Plan proposal: distributed model execution with Petals
 
-Status: **Codex starter proposal, awaiting Grok review and joint agreement.**
-Date: 2026-10-28. This is a plan, not an implemented feature.
+Status: **Billing and Privacy accepted. The fake-block planner is in `src/core/distributed/chain.js`. Petals runtime, Qwen, and membership proofs are still open.**
+Date: 2026-10-28. This plan is not a claim that distributed inference runs. The planner is mock execution: fake block ranges, no tensors, no Petals process, and no model answer.
 
 ## Intended outcome
 
@@ -48,7 +48,9 @@ Version these contracts before two agents implement their ends:
 - Hold a session's block placement stable. Replacement replicas need compatible cache reconstruction or documented replay; hot failover is not automatically safe or free.
 - Never silently restart a request after emitted user-visible output or bill replay as newly delivered work. Define deadline, partial-delivery, and refund behavior explicitly before enabling paid distributed sessions.
 
-## Economy proposal for Grok to challenge
+## Economy contract
+
+The Billing section below is the accepted contract. The mock planner calls `Ledger.settleMany` inside its own tests. That does not turn distributed serving on. Product sessions stay unbilled until a real swarm proof exists and the phase-4 checks are the product path.
 
 The requester pays **one** model-level budget for input/output usage, not that budget once per block server. Providers collectively receive the full final charge; LLMesh has no percentage cut.
 
@@ -62,6 +64,8 @@ An activation-step receipt is not cryptographic proof of correct model execution
 
 ## Implementation phases and acceptance gates
 
+Phase 0 and phase 1 are not done. `src/core/distributed/chain.js` and `test/distributed-chain.test.js` pin coverage and settlement behavior with fake blocks. They do not satisfy the phase-1 proof. Copilot's static checker is separate and does not set `runtimeTested`.
+
 | Phase | Deliverable | Gate before proceeding |
 | --- | --- | --- |
 | 0: feasibility | Pin runtime/dependencies; compare Petals reuse vs a compatible extension; license/checkpoint and hardware matrix; identify client-local memory requirements. | Clean reproducible installation and documented blockers; explicit Qwen compatibility findings. |
@@ -74,21 +78,65 @@ An activation-step receipt is not cryptographic proof of correct model execution
 
 Performance reports must name hardware, model revision, quantization, token/context counts, link conditions, concurrency, first-token latency and sustained decode speed. No blanket claim that distributed execution is faster than local inference.
 
-## Proposed planning ownership
+## Planning ownership
 
-- **Codex:** master plan editor for this document; LLMesh adapter, API/router/lifecycle, UI/graph, economic integration and rollout design. No implementation edits for this new feature until the plan/ownership are agreed.
-- **Grok:** independent review of Petals feasibility/transport, shard coverage and cache failure semantics, correctness/acceptance tests, and payout conservation. Append review to `AGENT_COORDINATION.md`; a separate research note is welcome if a distinct path is agreed.
-- Existing ledger/mesh file ownership remains in force. No parallel edit of the same master plan, runtime/API, or mesh file without an explicit handoff.
+Accepted file split. Do not edit another owner's files without a handoff.
 
-## Questions awaiting Grok's response
+- **Codex:** economy, API, router, service, desktop UI, contracts, Rust proto, README, and WORK_LOG. `Ledger.settleMany` is the multi-host payment API. Codex does not edit the planner while this split holds.
+- **Grok:** `src/core/distributed/chain.js`, `test/distributed-chain.test.js`, and this plan's status. `bfb09f2` first landed the suite as `test/distributed-models.test.js`. That file is gone so there is one suite. Mesh completion checks were released after `377ce17`.
+- **VS Code Copilot:** `scripts/check-petals-compatibility.js`, `test/petals-compatibility.test.js`, and `docs/petals-runtime-feasibility.md`. Those files stay out of routing.
+- **OpenCode:** economy API security tests and the withdrawal adapter already handed to Codex. Not part of the distributed runtime.
 
-1. Is an optional pinned Python sidecar/private Linux swarm the right initial boundary, or is there a demonstrably better low-risk route? Cite the upstream APIs/code that change the answer.
-2. Which non-gated supported checkpoint and smallest practical hardware setup can prove **real** cross-node block execution before Qwen work?
-3. How should we bind Nostr membership to Petals peer identities and prevent an unapproved block server from joining the private inference route? Private discovery alone is insufficient.
-4. What minimal session/KV-cache failover behavior is defensible at launch? Which failures must terminate rather than replay?
-5. How should one requester charge be allocated among block workers and endpoint components, with no fee, no double payment, and explicit verification limits?
-6. Which phase gates or protocol fields are missing? Which planning/implementation files can you own without colliding with the current economy work?
+The mock calls the real ledger `reserve`, `settleMany`, and `cancel`. It does not add a second ledger. A recorded split is not a product payout until `settleMany` runs, and the mock's test payouts do not create backing or cash-out eligibility.
 
 ## Joint decisions
 
-Pending. Append accepted/rejected decisions after both agents respond; keep unresolved issues visible.
+Accepted:
+
+- An optional pinned Python sidecar on a private Linux/NVIDIA swarm is the first runtime boundary. Whole-model routing stays the default. The distributed option defaults off. Companion and hardware-only requests stay on one machine.
+- Tensor traffic stays on Petals/Hivemind. It does not enter the LLMesh mesh frame protocol.
+- The phase-1 checkpoint hypothesis is `bigscience/bloom-560m`, with `TinyLlama/TinyLlama-1.1B-Chat-v1.0` as fallback. Record the license before any download. Qwen is a later milestone. The pin is `22afba627a7eb4fcfe9418c49472c6a51334b8ac`. Current GGUF and WASM Qwen weights are not assumed usable.
+- Membership is a Nostr-signed binding of the Hivemind peer id plus an allowlist. `initial_peers` is discovery, not membership. The planner drops public, busy, incapable, stale, wrong-model, wrong-revision, and non-allowlisted offers before it ranks speed.
+- One model-level charge. `sum(provider payouts) == requester final charge <= reserved budget`. No LLMesh cut. Weights are manifest block counts. Integer division leaves the remainder on the last paid span. Example: 10 atoms across spans of 1, 2, and 1 block pays 2, 5, and 3. Replicas and ranges off the successful route get nothing. Advertising a span pays nothing.
+- Launch failover is one rebuild inside the same unpaid reservation before any user-visible output, and only while a full allowlisted cover remains. After any user-visible delta, or if coverage is gone, terminate and cancel. Do not start another paid attempt for that request. No KV-cache migration at launch.
+- The Billing and Privacy sections below are the accepted contracts. `earned_total` increases only when a share is paid to a different Nostr account. Self-served shares restore original provenance. Starter grants are not backing.
+
+Still unresolved:
+
+- No Linux/NVIDIA pair is allocated. This Windows checkout is not the phase-1 proof. One full-model server pretending to be distributed does not pass.
+- Qwen is absent from the pinned registry. A matching label is not support.
+- The supply chain must pin the commit. Do not install floating Petals main.
+- Activations are not a privacy guarantee. Receipts accept a usage report. They do not prove correct execution. Transport encryption is not confidential computation.
+- Tensor transport, NAT, and real latency are unmeasured.
+- A failure after visible output refunds the open reservation. Any later partial pay needs its own policy.
+- A public swarm, `health.petals.dev`, a 405B download, and CUDA in CI are out of launch.
+- `runtimeTested` stays false until a real two-process run says otherwise.
+
+## Billing
+
+Codex-reviewed contract for the mock and eventual ledger integration:
+
+- New grants are `STARTER_CREDITS` (10,000 credits), stored as `STARTER_CREDITS * CREDIT_SCALE` integer atoms. Existing balances are preserved; tests import the constants.
+- There is one model-level charge per completed sequence, not a complete charge per block host. Provider allocations conserve atoms exactly and LLMesh takes no percentage fee.
+- Spend promotional/unbacked balance before backed balance. `redeemable` is the backed subset; starter grants have no backing. Promotional provenance must survive reservations/refunds and cannot become withdrawable by changing hosts.
+- Settle only after an accepted completed sequence with delivered text/tool output and bounded usage. A mock or signed usage receipt does not prove correct inference.
+- Each actual payee receives its assigned share. Backed atoms are divided within those shares with exact conservation; unbacked atoms cannot increase a host's `redeemable` balance.
+- `earned_total` increases only for a share paid to a different Nostr account from the payer. Self-served shares restore their original provenance without converting grants to earned/backed funds. Distinct Nostr keys alone do not prove distinct humans or rule out collusion.
+- Duplicate settlement must not pay again; cancel/restart refunds only an open reservation. A completed final settlement is not refunded because receipt delivery or a client connection subsequently fails.
+- Direct transfers cannot spend the remaining promotional grant. Legitimate work earnings can be transferred without a network fee, while keeping backed/unbacked status separate.
+- Codex will provide `Ledger.settleMany(id, allocations, usedAtoms)`, where each allocation is `{worker, atoms}` and the sum equals `usedAtoms`. Use `settle()` for a single host until that method is available; a recorded split alone is not a claim that multiple hosts have actually been paid.
+- A failed chain initially refunds the uncompleted attempt and pays no unverified span allocation. Do not replay after visible output. Any future partial-work compensation needs its own agreed policy and bounded reservation.
+- Internal funding helpers are not a public mint. Paid distributed sessions and withdrawals remain gated on their respective accounting/funding checks; this mock creates neither backing nor cash-out eligibility.
+
+## Privacy
+
+Codex-reviewed policy:
+
+Distributed execution sends model inputs beyond the caller's machine. A token-input host can reconstruct the prompt, and activation hosts may recover information or alter results. Link encryption is not confidential computing. Do not label later spans as unable to read private data.
+
+All chain participants must be authorized for the request's trust/privacy policy. Mesh-only means trusted LLMesh participants; public Petals servers and donated API relays must not enter that route silently. The initial experiment uses a private membership policy. Merely using a private bootstrap/DHT address is not sufficient authentication or membership enforcement.
+
+The planned distributed request option defaults off. Companion/hardware-only routes remain outside this experimental chain path at launch. A proposed `local_only` option must be implemented and tested before the UI claims such a mode exists; it must exclude every remote hop. Current mesh-only privacy is not equivalent to local-only execution.
+
+Name every selected participant in the route and final receipt. Public discovery/graphs expose only bounded model/span/health/performance metadata, not prompts, activations, caches, account secrets, or private keys. Only approved fixed model operations execute on a span host, with resource/frame limits and no arbitrary peer-supplied code.
+
