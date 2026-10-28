@@ -1,5 +1,6 @@
 import {sha256} from '@noble/hashes/sha2.js';
 const hex=bytes=>Array.from(bytes,byte=>byte.toString(16).padStart(2,'0')).join('');
+export function repositoryAssetPath(path,prefix){return path.startsWith(prefix)?decodeURIComponent(path.slice(prefix.length)).replace('/resolve/main/','/'):null;}
 export function assetResponse(record,base,Fetch=fetch){
  const body=new ReadableStream({async start(controller){const full=sha256.create();let total=0;
   try{for(const part of record.parts){if(!/^[\w./-]+$/.test(part.path)||part.path.split('/').includes('..'))throw new Error('Invalid model part path');const response=await Fetch(base+part.path,{cache:'no-store'});if(!response.ok)throw new Error('Repository asset HTTP '+response.status);const hash=sha256.create();let size=0;
