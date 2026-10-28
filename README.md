@@ -8,13 +8,13 @@
   <a href="rust/README.md"><img alt="Rust and WASM preview" src="https://img.shields.io/badge/Rust_%2B_WASM-preview-00aeef"></a>
 </p>
 
-LLMesh turns your computer into an AI node. It detects your hardware, chooses a Qwen model, prepares it locally, and gives your applications an OpenAI-compatible endpoint. Connect trusted peers and requests can use a suitable available worker, with streamed responses and a quote based on the model and requested work.
+LLMesh turns your computer into an AI node. It detects your hardware, chooses a Qwen model, prepares it locally, and gives your applications an OpenAI-compatible endpoint. Connect trusted peers and requests can use a suitable available worker, with streamed responses and metered credits: one credit for each reported input or output model token.
 
 You choose how much computing power to contribute. Use the machine in front of you, share a home GPU with your other devices, or build a trusted group that pools access to larger models.
 
-**Current status:** an Electron/Node implementation with local inference, a trusted peer mesh, prototype Base token contracts and a Rust/WASM foundation. No live LLMESH token or escrow deployment is supplied. Android, web sign-in, QR pairing, the full Rust daemon and the downloadable release matrix are roadmap work.
+**Current status:** an Electron/Node implementation with local inference, a trusted peer mesh, prototype Base token contracts and a Rust/WASM foundation. No live LLMESH token or escrow deployment is supplied. The web worker and desktop-approved QR device linking are implemented. Native Android, full Nostr remote signing, the full Rust daemon and the downloadable installer matrix remain roadmap work.
 
-[Start](#start-running) · [Features](#what-works-today) · [API](#one-endpoint-for-your-tools) · [Vision](#what-happens-when-the-network-grows) · [Roadmap](#where-were-going)
+[Open the web worker](https://amosroger91.github.io/LLMesh/) · [Start](#start-running) · [Features](#what-works-today) · [API](#one-endpoint-for-your-tools) · [Vision](#what-happens-when-the-network-grows) · [Roadmap](#where-were-going)
 
 ## Why LLMesh exists
 
@@ -35,6 +35,11 @@ The ambition is to put more of AI's infrastructure in the hands of the people wh
 | Complexity-aware routing | Recommends a tier, then weighs availability, latency, throughput and price |
 | OpenAI-compatible API | Model discovery, streamed chat, function tool calls, route previews and receipts |
 | AI companion | A chat interface to that same mesh pipeline, with cancellation and local history |
+| Network map | Live graph of known trusted desktops, their linked browser devices and your donated API workers |
+| Web worker | One-button Qwen3.5 WebGPU/WASM setup, online count and request activity; no wallet UI |
+| QR device linking | Desktop-signed, expiring, one-use worker pairing with desktop approval and immediate revocation |
+| Donated API capacity | OpenRouter :free, Groq or another OpenAI-compatible model; usage tracking, local limits and explicit consumer consent |
+| Swarm requests | Bounded task fan-out across available slots, with ordered results and per-task streaming |
 | Dashboard | Hardware, model/setup state, online nodes including yourself, activity, endpoint details, wallet and energy estimates |
 | One-click endpoint test | Sends a built-in message and shows success when a response arrives |
 | Local self-service | Reserves and returns credits to the same account; no Base transaction required |
@@ -131,12 +136,13 @@ for chunk in response:
 | `POST /v1/routes/preview` | Complexity, candidate model, worker and price without dispatch |
 | `POST /v1/chat/completions` | JSON or streamed SSE completion, including function tool calls |
 | `GET /v1/receipts/:id` | Authenticated payer's receipt and settlement state |
+| `POST /v1/swarm/completions` | Up to 32 independent agent tasks, bounded by available slots and a concurrency limit of 16 |
 | `POST /v1/accounts` | Registration / configured relayed starter grant |
 | `GET /v1/account` | Local account or linked wallet state |
 
 Supports text and text-part arrays, developer messages, assistant tool calls and tool results. Tools execute in the requesting application. Limits: 256 messages, 128 function definitions, 90,000 serialized input characters and a 512 KiB HTTP body. Positive output limits above 2048 are accepted and clamped; receipts show requested and effective limits. Context scales from 4096 to 32768 tokens. Images, audio, embeddings and complete OpenAI API parity are not implemented.
 
-The default API is loopback-only and rejects browser-origin calls. Protect its bearer key: configured remote requests can spend the node's tokens and gas. NIP-98 authentication also supports exact URL/method/payload binding and replay protection. A future web app needs the explicit browser access design in the [web plan](PLAN_WEB_AND_ACCOUNTS.md), not wildcard CORS.
+The default API is loopback-only and rejects browser-origin calls. Protect its bearer key: configured remote requests can spend the node's tokens and gas. NIP-98 authentication also supports exact URL/method/payload binding and replay protection. The web worker uses a paired, application-encrypted WebRTC data channel to its desktop; it never receives the API bearer key and needs no wildcard CORS.
 
 ## How requests find a worker
 
@@ -144,7 +150,11 @@ The default API is loopback-only and rejects browser-origin calls. Protect its b
 
 This is a keyword/context heuristic, not proof of task difficulty. By default, a mesh without the recommended tier uses its best eligible model and marks the result `degraded`. Set `allow_degraded: false` for a strict tier. No available eligible worker still produces an error.
 
-Routing considers trusted, fresh, idle model slots and compatible payment configuration. Its score combines RTT, time to first token, 15% of estimated generation time and a 250 ms penalty for each quoted token above one. A small speed difference therefore need not select a more expensive worker. Routes stay pinned through funding and dispatch. Advertisements and model claims remain self-reported within the trusted group.
+Routing considers trusted, fresh, idle model slots and compatible payment configuration. Local and remote hardware compete in the same pool. Scores combine RTT, first-token latency and 15% of estimated generation time. A 100 ms penalty per excess capability rank avoids tying up oversized local models on tiny tasks, while large speed differences can still win. There is no unconditional local or remote preference.
+
+When explicitly allowed, donated API slots receive a 150 ms preference and no oversized-model penalty. Their initial unmeasured estimate is 250 ms to first token and 100 tokens/second; observations replace it. Provider capability is a model-size/name proxy, not an audited quality score. Every model still bills the same one-credit token rate: smaller devices are not secretly charged a different tariff.
+
+A request served elsewhere does not mark your local runtime busy. Your unused slots can serve the mesh concurrently. If local hardware is already serving somebody else, that job finishes; your next request can use another eligible slot or wait. Hardware slots are reserved before funding, and queued requests have a cancellation/deadline. Swarm requests run independent supplied tasks across the available capacity; they do not invent arbitrary autonomous sub-agents or exceed slot limits.
 
 Streams reuse connections and forward incremental output with bounded buffers, backpressure and cancellation. Funding confirmation still adds startup latency; settlement retries happen after delivery. No lowest-latency benchmark is claimed.
 
@@ -167,9 +177,13 @@ A remote paid worker needs a receiving wallet and matching chain/escrow settings
 
 **Using your own node:** the local ledger reserves a quote and credits it back to the same account on completion, or refunds failure. The net change is zero. No blockchain or gas is needed. Electricity and hardware still have real costs.
 
-**Using another node:** configured Base contracts escrow **1–3 LLMESH** per bounded request. Models up to 2B start at one, up to 9B at two, and larger models at three. Output reservations above 1024 tokens and inputs above 6000 characters each add one, capped at three. This is a fixed quote, not metered billing for actual generated tokens. Contribution labels do not set prices.
+**Using another node:** 1 credit is spent and 1 credit earned for every reported input token plus generated token. A completion with 300 input and 120 output tokens transfers **420 credits** from requester to worker, regardless of model size or contribution level. Actual tool-call generation is included in runtime token usage. An initial refundable reservation covers the configured context ceiling plus output limit; unused credits are returned at settlement. The maximum authorization is 34,816 credits. A reservation is not the final price.
 
-The [contracts](contracts/LLMesh.sol) implement an 18-decimal ERC-20 and escrow v3. Issuer-approved registration grants 100 LLMESH once per wallet and Nostr key, with allowlist admission, rate limits and persistent wallet binding. The coordinator can sponsor registration gas. Durable settlement retries and worker-claimable signed delivery receipts separate generation from confirmation. Early refunds require signed worker failure; ordinary refunds wait for expiry plus a 24-hour dispute window.
+New approved accounts start with **100,000 credits**. Existing local accounts receive a one-time 99,900-credit upgrade from the old 100-credit starter allocation without resetting past spending or earnings. Registration remains once per wallet and Nostr key, with allowlist admission and rate limits. Pairing a browser does not create a new account or grant. A self-served request returns the reservation to the same account: **no self-mining or net issuance**.
+
+The [contracts](contracts/LLMesh.sol) implement an 18-decimal ERC-20: one whole LLMESH represents one inference credit. **Metered billing requires the new token and escrow v4; v3 deployments are incompatible and are not upgraded automatically.** New deployments issue the 100,000-credit grant. Existing on-chain deployments need an explicit migration/redeployment; a local database upgrade does not mint ERC-20 tokens.
+
+Escrow locks a maximum budget, pays the attested used credits to the worker, and returns the rest to the payer in one settlement. Delivery signatures bind the actual used-credit amount as well as chain, contract, job and output hash. Workers check that the attested count matches their recorded usage before accepting it. Durable retries separate generation from confirmation. Early refunds require signed worker failure; ordinary refunds wait for expiry plus a 24-hour dispute window. Failed or cancelled generations without final usage do not earn credits; the system does not guess token counts from streamed text.
 
 Local credits cannot pay other nodes or become ERC-20 balances. Base gas is additional. No live deployment, independent contract audit, token market value or permissionless proof of correct inference is supplied. The coordinator remains trusted for admission and delivery attestations. Payment channels, stronger distributed settlement and recovery are planned.
 
@@ -188,15 +202,49 @@ npm run contracts:deploy
 
 The temporary JavaScript test chain uses chain ID 31337. Never fund its public keys with real assets. Configure peers with the same token/escrow addresses. Base Sepolia is 84532; Base mainnet is 8453. Live deployment requires explicit confirmation and a funded deployer; starting LLMesh does not deploy contracts.
 
+## Use the web worker
+
+Open **[amosroger91.github.io/LLMesh](https://amosroger91.github.io/LLMesh/)** on a WebGPU-capable browser. Press **Download model & start serving**. The SDK is loaded on demand; Qwen3.5 0.8B uses a browser-compatible MLC artifact (q4f16 or q4f32 depending on the adapter), not the Ollama file. About 1.6–1.9 GB of GPU memory is estimated. Downloads are cached locally. Unsupported hardware produces a visible error; a CPU-only browser fallback is not claimed.
+
+On the desktop open **Network map → Generate pairing QR**. Scan it with the web app or phone camera, then **approve the device on the desktop**. The QR is signed by the desktop Nostr account and binds its ephemeral encryption key, worker-only scope, nonce and two-minute expiry. The one-use code contains no root secret, wallet key or API bearer key. ECDH/AES-GCM protects application traffic in addition to WebRTC transport encryption. Linked worker earnings go to the desktop receiving wallet through its normal settlement; the browser has no wallet screen or spending authority.
+
+Keep both the desktop and worker tab open. Hidden tabs withdraw ready slots; active work finishes before pausing. A missing heartbeat withdraws a device within 30 seconds. Disconnect/reload may require scanning a fresh QR; this is a scoped worker session, not full NIP-46 root-account login. PeerJS uses public signaling; data traffic is direct where connectivity permits. Some NAT/firewall combinations need a TURN service that is not supplied here. No universal cross-network connectivity is claimed.
+
+The graph includes your desktop, trusted peers, linked browser devices advertised by those peers, and your ready donated API workers. It shows the known mesh, not a global census. Web requests are received through the desktop bridge and share the same native mesh routing and metered accounting.
+
+## Donate API allowance, bank inference credits
+
+A GPU is one way to contribute. Another is to donate an API allowance you are authorized to use: **OpenRouter free models, Groq free-tier projects, or an OpenAI-compatible Chat Completions endpoint**. Open **Donate API tokens**, enter a key, discover/select a model, set a daily token cap and explicitly confirm your free-tier/spending controls. Keys are encrypted with desktop OS storage and never advertised or returned in status. No provider account is created automatically.
+
+Donations earn one credit per actual reported input/output token when serving another account. Usage is recorded per donated configuration and reported upstream model, with request counts and daily totals. Unknown usage from failed calls consumes its maximum local allowance conservatively in a separate counter; it does not mint inference credits. Rate limits/errors temporarily withdraw the slot. There is no automatic switch to paid models.
+
+OpenRouter donations require a `:free` model or `openrouter/free`. Groq/custom billing and provider terms cannot be verified by LLMesh: use permitted account credentials and provider-side spend limits. The local daily cap is not a guarantee of the provider's invoice. Streamed responses must report token usage; endpoints that omit it are paused rather than billed from a character estimate. See [OpenRouter free variants](https://openrouter.ai/docs/guides/routing/model-variants/free) and [Groq compatibility](https://console.groq.com/docs/openai).
+
+**Consumer privacy is explicit and defaults to mesh only:**
+
+```json
+{"model":"llmesh-auto","privacy":"mesh-only","messages":[{"role":"user","content":"Keep this on trusted mesh workers."}]}
+```
+
+Set `"privacy":"allow-third-party"` (or `allow_third_party:true`) to permit donated APIs. The desktop has the same visible selection. Mesh-only filtering is enforced by the router and independently by the donated runtime; there is no silent API fallback. Receipts identify source, provider and offered upstream model. Donor usage records include the model actually reported by the provider. Transport encryption does not make a cloud provider private. Trusted mesh workers also see the plaintext they process; privacy still depends on the chosen operators.
+
+## Parallel swarm requests
+
+`POST /v1/swarm/completions` accepts `tasks` (1–32 normal chat jobs), `max_concurrency` (1–16), and optional `stream:true`. Tasks carry their own privacy choice. Agents are bounded by known slots, results keep task order, and each task gets its own route, usage and receipt. SSE progress is indexed by task. These are independent user-supplied jobs, not speculative hidden work.
+
 ## Your data, your boundaries
 
 Companion history stays in IndexedDB. Preferences stay in localStorage; accounting and energy records use local SQLite. Desktop secrets use Electron safeStorage and stay out of renderer status responses. Headless keys support passphrase encryption with scrypt and AES-256-GCM. Without a passphrase, protect the data directory with OS access controls; Windows file mode 0600 is insufficient.
 
 Local inference can keep prompts on your machine. Remote inference sends them to the selected worker, which must see plaintext to run today's models. Transport encryption does not hide prompts from that worker. Choose peers accordingly. This is not confidential-computing attestation or a guarantee of deletion by a remote operator.
 
-The app contains no social rooms, public feed or RSS bots. Nostr provides identity and authentication. Shared accounts across installations, device revocation and QR sign-in are planned, not available yet. Back up irreplaceable keys before funding a wallet; a complete cross-platform recovery flow remains work.
+The app contains no social rooms, public feed or RSS bots. Nostr provides identity and authentication. Worker-only QR linking and revocation are available for browser devices. Full cross-platform account sign-in through NIP-46 and independent offline recovery remain planned. Back up irreplaceable keys before funding a wallet; a complete cross-platform recovery flow remains work.
 
 ## What happens when the network grows
+
+**Contribute overnight. Build during your workday.** A developer without a 16 GB GPU could let a smaller computer serve real requests while idle, bank the earned credits, then spend them on another person's larger model during work. Their own hardware remains in the pool: suitable tasks can stay local, tiny tasks can use waiting mobile/browser workers, and demanding tasks can use higher-end machines. Donated API allowance adds capacity for people without a useful GPU and can help bootstrap speed and model quality.
+
+The tangible unit is reported inference work, not merely leaving an app open. Idle time does not mint tokens. ERC-20 balances are transferable, enabling a future exchange for money as well as inference; an exchange, liquidity and monetary value are not supplied or guaranteed. One token is an accounting unit accepted by participating workers, not a guaranteed claim on reserved hardware, electricity, or a fixed quality of answer. Model tokenizers and computational costs differ; the current uniform rate is an explicit initial exchange policy.
 
 One local model gives one person more control. A widely adopted mesh could make that control useful at a different scale: a classroom sharing a GPU after hours, a neighborhood cooperative pooling hardware, an independent researcher accessing a larger model, or a small organization running its own private inference network.
 
@@ -217,12 +265,12 @@ Wider adoption would not automatically remove corporate power or create an equal
 | Linux | Node headless entrypoint; expanded CLI under development | x64/arm64 tarballs, deb/rpm, systemd and containers |
 | Rust | Quote/placement crates, shared fixtures, CLI preview, WASM exports | Validation/routing bindings, daemon, libp2p and parity-gated desktop sidecar |
 | Android | Architecture defined | Termux requester first, then Kotlin/UniFFI native app |
-| Web | Portable WASM foundation and design | PWA requester, browser-compatible transport, optional WebGPU worker |
-| Shared accounts | Nostr identity per installation | NIP-46 QR signing, scoped devices and shared linked-wallet balance |
+| Web | GitHub Pages WebGPU/WASM worker, encrypted WebRTC link, online count and activity | Real-device/browser matrix, persistent sessions and PWA requester |
+| Shared accounts | Desktop-approved browser worker sessions; earnings stay on its account | Full NIP-46 signer integration and cross-platform account portability |
 | Security | Trusted peers, replay checks, encrypted transport/local key options | Rust-only group PKI, privacy sealing, audit and Sovereign edition |
 | Payments | Prototype fixed-price escrow | Audited channels, recovery and stronger spending controls |
 
-The planned QR flow approves a new device through an existing signer; it does not put a private key or wallet seed in the QR. Account identity, device membership and spending permission remain separate. Signing into the same account must not mint another starter grant. History synchronization is separately consented, not an automatic upload of conversations.
+The worker QR flow approves a new device through its desktop; it does not put a private key or wallet seed in the QR. Account identity, device membership and spending permission remain separate. Signing into the same account must not mint another starter grant. History synchronization is separately consented, not an automatic upload of conversations.
 
 Node keeps shipping until Rust passes parity. WASM shares portable logic, not the entire native daemon: browsers need different transport/storage adapters and cannot spawn Ollama or inspect free VRAM like a native app. The companion continues to use the same mesh inference pipeline.
 
@@ -235,7 +283,7 @@ Plans and acceptance criteria:
 - [Review fixes and remaining work](REVIEW_STATUS.md)
 - [Rust parity checklist](docs/rust-parity.md)
 
-Release targets include both standard and offline Windows installers, Linux x64/arm64 packages and containers, then Android and web artifacts. These are **targets, not downloads promised today**. Windows builds are currently unsigned; SmartScreen may require **More info → Run anyway** for a build you have verified. No paid signing service is configured. Free keyless checksum/container signing and application to the free SignPath Foundation program are planned.
+Release targets include both standard and offline Windows installers, Linux x64/arm64 packages and containers, then Android artifacts. Installer packages are **targets, not downloads promised today**; the static web app is built and deployed separately by GitHub Pages. Windows builds are currently unsigned; SmartScreen may require **More info → Run anyway** for a build you have verified. No paid signing service is configured. Free keyless checksum/container signing and application to the free SignPath Foundation program are planned.
 
 ## Build, test and contribute
 

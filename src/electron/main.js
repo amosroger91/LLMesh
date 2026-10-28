@@ -8,6 +8,8 @@ import { startApi } from '../api.js';
 import { generateSecretKey, signAuth } from '../identity.js';
 import { Wallet, randomBytes, hexlify } from 'ethers';
 import { Payments } from '../payments.js';
+import { finalizeEvent } from 'nostr-tools/pure';
+import { discoverProvider } from '../core/providers.js';
 
 let service, api, window, quitting = false;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -31,6 +33,8 @@ else {
     await payments.startConnection();
     service = new Service({ directory, secret, payments, apiKey: encrypted('api-key.enc', () => hexlify(randomBytes(32)).slice(2)),
       topic: process.env.LLMESH_TOPIC, allowedWorkers: list('LLMESH_WORKERS'), trustedCoordinators: list('LLMESH_COORDINATORS'), network: process.env.LLMESH_NO_MESH !== '1' });
+    const donationsPath=join(directory,'donated-apis.enc');
+    if(existsSync(donationsPath))service.providers.configure(JSON.parse(safeStorage.decryptString(readFileSync(donationsPath))));
     api = await startApi(service, { port: Number(process.env.LLMESH_PORT ?? 7337) });
     await service.initialize();
     window = new BrowserWindow({ width: 1180, height: 850, minWidth: 850, minHeight: 650, show: process.env.LLMESH_SMOKE !== '1', backgroundColor: '#10151d', icon: join(here, '../../assets/branding/icon.png'),
@@ -46,6 +50,27 @@ else {
       return fn(...args);
     });
     handle('status', () => service.status());
+    const saveDonations=()=>writeFileSync(donationsPath,safeStorage.encryptString(JSON.stringify(service.providers.configuration())));
+    handle('provider-models',value=>discoverProvider(value));
+    handle('provider-add',value=>{service.providers.configure([...service.providers.configuration(),value]);saveDonations();return service.providers.snapshot();});
+    handle('provider-remove',id=>{service.providers.configure(service.providers.configuration().filter(provider=>provider.id!==id));saveDonations();});
+    handle('provider-toggle',id=>{service.providers.configure(service.providers.configuration().map(provider=>provider.id===id?{...provider,enabled:!provider.enabled}:provider));saveDonations();});
+    let pairing;
+    handle('browser-pair', value => {
+      if (!value || !/^[A-Za-z0-9_-]{1,100}$/.test(value.peerId) || value.publicKey?.kty !== 'EC' || value.publicKey.crv !== 'P-256' || typeof value.publicKey.x !== 'string' || typeof value.publicKey.y !== 'string') throw new Error('Invalid pairing key');
+      pairing = { nonce: hexlify(randomBytes(32)).slice(2), expires: Date.now() + 120000, used: false };
+      return finalizeEvent({ kind: 30078, created_at: Math.floor(Date.now()/1000), tags: [['d','llmesh-worker-pair-v1']],
+        content: JSON.stringify({ v:1, scope:'worker-only', peerId:value.peerId, publicKey:value.publicKey, nonce:pairing.nonce, expires:pairing.expires,
+          origin:'https://amosroger91.github.io', account:service.pubkey }) }, secret);
+    });
+    handle('browser-approve', value => {
+      if (!pairing || pairing.used || pairing.expires < Date.now() || value.nonce !== pairing.nonce) throw new Error('Pairing expired or already used; generate a new QR');
+      service.browserWorkers.register(value.deviceId,value.name);pairing.used=true;
+      return {account:service.pubkey,scope:'worker-only'};
+    });
+    handle('browser-report', (id,event) => {try{return service.browserWorkers.report(id,event);}catch(error){service.browserWorkers.remove(id);throw error;}});
+    handle('browser-remove', id => { emit('browser-send',{deviceId:id,message:{type:'revoked'}});service.browserWorkers.remove(id); });
+    service.browserWorkers.on('send', value => emit('browser-send',value));
     handle('contribution', level => service.configureContribution(level));
     handle('route-preview', job => service.route(job));
     handle('copy', name => { const state = service.status(); const value = { endpoint: state.api + '/v1', apiKey: service.apiKey, modelId: 'llmesh-auto', modelName: 'LLMesh Auto', wallet: state.payments.address, pubkey: state.pubkey }[name]; if (value) clipboard.writeText(value); });

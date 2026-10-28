@@ -35,10 +35,10 @@ test('routing uses per-model measurements, excludes busy/stale/memory-incompatib
   const busy = { ...node('busy', [medium], 1), busy: 1 }, stale = { ...node('stale', [medium], 1), seen: 0 };
   const unsafe = { ...node('unsafe', [medium], 1), hardware: { maxModelRank: 1 } };
   const route = planRoute({ model: 'llmesh-auto', messages: message('Write a function for filtering records'), maxTokens: 512 }, [cold, warm, busy, stale, unsafe]);
-  assert.equal(route.worker, 'warm'); assert.equal(route.priceUnits, 2); assert.match(route.estimate.basis, /observed/);
+  assert.equal(route.worker, 'warm'); assert.equal(route.priceUnits, 4608); assert.match(route.estimate.basis, /observed/);
 });
 
-test('price-aware routing chooses cheaper near-ties but still rewards substantial speed gains', () => {
+test('uniform pricing uses latency and avoids oversized models in near ties', () => {
   const job = { messages: message('Hello'), maxTokens: 512 };
   const cheap = { ...node('cheap', [small], 200), contribution: 'high' };
   const costly = { ...node('costly', [medium], 100), contribution: 'low' };
@@ -46,15 +46,15 @@ test('price-aware routing chooses cheaper near-ties but still rewards substantia
   cheap.metrics[small].firstTokenMs = 1000;
   assert.equal(planRoute(job, [cheap, costly]).worker, 'costly');
   const tinyHigh = planRoute(job, [{ ...node('high', [small]), contribution: 'high' }]);
-  assert.equal(tinyHigh.priceUnits, 1);
-  assert.equal(planRoute(job, [{ ...node('low', ['qwen3.5:9b']), contribution: 'low' }]).priceUnits, 2);
+  assert.equal(tinyHigh.priceUnits, 4608);
+  assert.equal(planRoute(job, [{ ...node('low', ['qwen3.5:9b']), contribution: 'low' }]).priceUnits, 4608);
 });
 
-test('fixed quotes reflect model size and bounded request work, not wording or labels', () => {
-  const model = { parametersB: 0.8 };
-  assert.equal(quoteWork(model, message('Hello'), 512).priceUnits, 1);
-  assert.equal(quoteWork(model, message('Hello'), 2048).priceUnits, 2);
-  assert.equal(quoteWork(model, message('x'.repeat(6001)), 2048).priceUnits, 3);
-  assert.equal(quoteWork({ parametersB: 27 }, message('Hello'), 12).priceUnits, 3);
-  assert.throws(() => quoteWork({}, [], 512), /unknown model/);
+test('reservations grow with context and output limits, never model size or contribution', () => {
+ const model={parametersB:0.8};
+ assert.equal(quoteWork(model,message('Hello'),512).reservedCredits,4608);
+ assert.equal(quoteWork(model,message('Hello'),2048).reservedCredits,6144);
+ assert.equal(quoteWork(model,message('x'.repeat(20000)),2048).reservedCredits,12288);
+ assert.equal(quoteWork({parametersB:27},message('Hello'),512).reservedCredits,4608);
+ assert.throws(()=>quoteWork({},[],512),/unknown model/);
 });

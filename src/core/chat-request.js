@@ -18,8 +18,12 @@ function toolCall(call) {
   return { id: call.id, type: 'function', function: { name: call.function.name, arguments: JSON.stringify(args) } };
 }
 export function validateJob(job) {
-  if (!job || !['auto', 'llmesh-auto', ...catalog.models.map(model => model.id)].includes(job.model)) throw new Error('Unknown model; use llmesh-auto or an ID from GET /v1/models');
+  if (!job || !(['auto', 'llmesh-auto', ...catalog.models.map(model => model.id)].includes(job.model) || typeof job.model === 'string' && /^donated:[a-z0-9-]{1,80}$/.test(job.model))) throw new Error('Unknown model; use llmesh-auto or an ID from GET /v1/models');
   if (!Array.isArray(job.messages) || job.messages.length < 1 || job.messages.length > 256) throw new Error('messages must contain 1–256 chat messages');
+  if(job.privacy!=null&&!['mesh-only','allow-third-party'].includes(job.privacy))throw new Error('privacy must be mesh-only or allow-third-party');
+  if(job.allow_third_party!=null&&typeof job.allow_third_party!=='boolean')throw new Error('allow_third_party must be boolean');
+  if(job.privacy==='mesh-only'&&job.allow_third_party===true||job.privacy==='allow-third-party'&&job.allow_third_party===false)throw new Error('Conflicting privacy options');
+  const privacy=job.privacy??(job.allow_third_party===true?'allow-third-party':'mesh-only');
   const messages = job.messages.map(message => {
     if (!message || !['system', 'developer', 'user', 'assistant', 'tool'].includes(message.role)) throw new Error('Unsupported chat message role');
     const normalized = { role: message.role === 'developer' ? 'system' : message.role, content: textContent(message.content) };
@@ -46,7 +50,7 @@ export function validateJob(job) {
   const maxTokens = Math.min(limit, MAX_OUTPUT_TOKENS);
   if (job.complexity != null && !['auto', 'simple', 'standard', 'complex'].includes(job.complexity)) throw new Error('Invalid complexity level');
   if (job.allow_degraded != null && typeof job.allow_degraded !== 'boolean') throw new Error('allow_degraded must be boolean');
-  return { model: job.model, messages, tools: tools.map(tool => ({ type: 'function', function: { ...tool.function } })),
+  return { model: job.model, privacy, messages, tools: tools.map(tool => ({ type: 'function', function: { ...tool.function } })),
     tool_choice: job.tool_choice ?? 'auto', maxTokens, requestedMaxTokens,
     contextTokens: Math.min(32768, Math.max(4096, Math.ceil((inputCharacters / 3 + maxTokens + 512) / 1024) * 1024)),
     complexity: job.complexity ?? 'auto', allowDegraded: job.allow_degraded == null ? job.allowDegraded !== false : job.allow_degraded,

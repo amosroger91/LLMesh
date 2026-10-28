@@ -96,6 +96,14 @@ export class Mesh extends EventEmitter {
       if (info.phase === 'identity') return;
       if (!Array.isArray(info.models) || info.models.length > 20 || !info.models.every(model => typeof model === 'string' && model.length < 100) || ![0, 1].includes(info.busy)) throw new Error('Bad capabilities');
       if(info.slots!=null&&(!Array.isArray(info.slots)||info.slots.length>64||!info.slots.every(slot=>typeof slot.id==='string'&&slot.id.length<=100&&typeof slot.model==='string'&&Number.isInteger(slot.total)&&slot.total>=1&&slot.total<=4&&Number.isInteger(slot.free)&&slot.free>=0&&slot.free<=slot.total)))throw new Error('Invalid runtime slots');
+      if(info.devices!=null&&(!Array.isArray(info.devices)||info.devices.length>16||!info.devices.every(device=>/^web-[a-f0-9]{64}$/.test(device.id)&&typeof device.name==='string'&&device.name.length<=60&&typeof device.model==='string'&&device.model.length<=100&&typeof device.busy==='boolean')))throw new Error('Invalid linked devices');
+      peer.devices=info.devices??[];
+      for(const slot of info.slots??[]){
+        if(slot.source==='third-party'){
+          const model=slot.modelInfo;
+          if(!model||model.id!==slot.model||!/^donated:[a-z0-9-]{1,80}$/.test(model.id)||!Number.isInteger(model.rank)||model.rank<1||model.rank>5||!Number.isFinite(model.parametersB)||model.parametersB<=0||model.parametersB>10000||typeof model.provider!=='string'||model.provider.length>40||typeof model.upstreamModel!=='string'||model.upstreamModel.length>200||!Number.isSafeInteger(slot.creditBudget)||slot.creditBudget<0||slot.creditBudget>10000000)throw new Error('Invalid donated API capability');
+        }else if(slot.model.startsWith('donated:'))throw new Error('Unclassified third-party capability');
+      }
       peer.slots=info.slots;
       Object.assign(peer, { models: info.models, busy: info.busy, seen: Date.now() });
       peer.wallet = typeof info.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(info.wallet) ? info.wallet : null;
@@ -148,11 +156,13 @@ export class Mesh extends EventEmitter {
             (task.bytes += Buffer.byteLength(JSON.stringify(msg.calls))) > 262144) throw new Error('Invalid worker tool calls');
         task.onDelta({ type: 'tool_calls', calls: msg.calls });
       } else if (msg.type === 'done') {
+        if (!Number.isSafeInteger(msg.tokens) || msg.tokens < 0 || msg.tokens > task.maxTokens ||
+            !Number.isSafeInteger(msg.promptTokens ?? 0) || (msg.promptTokens ?? 0) < 0 || (msg.promptTokens ?? 0) > 32768) throw new Error('Invalid worker token usage');
         if (task.firstAt && Number.isFinite(msg.tokens) && msg.tokens > 0 && msg.tokens <= task.maxTokens)
           ((peer.metrics ??= {})[task.model] ??= {}).tokensPerSecond = peer.tokensPerSecond = msg.tokens / Math.max(0.001, (performance.now() - task.firstAt) / 1000);
         peer.loadedModel = task.model;
-        this.pending.delete(msg.id); task.resolve({ worker: peer.pubkey, tokens: Number.isFinite(msg.tokens) ? Math.max(0, Math.min(msg.tokens, task.maxTokens)) : 0,
-          promptTokens: Number.isFinite(msg.promptTokens) ? Math.max(0, Math.min(msg.promptTokens, 32768)) : 0, finishReason: ['length', 'tool_calls'].includes(msg.finishReason) ? msg.finishReason : 'stop' });
+        this.pending.delete(msg.id); task.resolve({ worker: peer.pubkey, tokens: msg.tokens,
+          promptTokens: msg.promptTokens ?? 0, finishReason: ['length', 'tool_calls'].includes(msg.finishReason) ? msg.finishReason : 'stop' });
       }
       else if (msg.type === 'error') {
         this.pending.delete(msg.id);
@@ -165,12 +175,12 @@ export class Mesh extends EventEmitter {
   }
   workers() {
     return [...this.byIdentity.values()].filter(peer=>this.allowedWorkers.includes(peer.pubkey)).flatMap(peer=>{
-      const base={pubkey:peer.pubkey,models:peer.models,busy:Math.max(peer.busy,peer.inFlight),seen:peer.seen,latencyMs:peer.latencyMs,
+      const base={devices:peer.devices,pubkey:peer.pubkey,models:peer.models,busy:Math.max(peer.busy,peer.inFlight),seen:peer.seen,latencyMs:peer.latencyMs,
         firstTokenMs:peer.firstTokenMs,tokensPerSecond:peer.tokensPerSecond,hardware:peer.hardware,loadedModel:peer.loadedModel,metrics:peer.metrics,
-        contribution:peer.contribution,wallet:peer.wallet,chainId:peer.chainId,escrow:peer.escrow};
+        supportsTools:peer.supportsTools,contribution:peer.contribution,wallet:peer.wallet,chainId:peer.chainId,escrow:peer.escrow};
       if(!peer.slots)return [base];
       return peer.slots.map(slot=>({...base,instanceId:slot.id,models:[slot.model],total:slot.total,
-        free:Math.max(0,slot.free-(peer.instanceInFlight?.get(slot.id)??0)),busy:slot.free>(peer.instanceInFlight?.get(slot.id)??0)?0:1,
+          source:slot.source,creditBudget:slot.creditBudget,modelCatalog:slot.source==='third-party'?[slot.modelInfo]:[],supportsTools:slot.supportsTools,free:Math.max(0,slot.free-(peer.instanceInFlight?.get(slot.id)??0)),busy:slot.free>(peer.instanceInFlight?.get(slot.id)??0)?0:1,
         metrics:{[slot.model]:{firstTokenMs:slot.firstTokenMs,tokensPerSecond:slot.tokensPerSecond}}}));
     });
   }

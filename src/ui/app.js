@@ -1,9 +1,12 @@
+import {donationControls} from './donations.js';
+import {browserBridge} from './browser-bridge.js';
 import { LocalStore } from '../browser/storage.js';
 import { npubEncode } from 'nostr-tools/nip19';
 
 const $ = id => document.getElementById(id), api = window.llmesh;
 let first = true, state, store, outputNode;
 let companionHistory = [], inferenceActive = false;
+let renderDonations;
 function error(e) { $('error').textContent = e.message ?? String(e); }
 function bind(id, fn) { $(id).onclick = async () => { $('error').textContent = ''; try { await fn(); } catch (e) { error(e); } }; }
 async function task(id, fn) { $(id).disabled = true; try { return await fn(); } finally { $(id).disabled = false; } }
@@ -39,7 +42,7 @@ function renderPayments(payment) {
 async function refresh() {
   state = await api.status();
   $('memory').textContent = `${state.hardware.freeRamGB.toFixed(1)} GB free RAM`;
-  $('online').textContent = state.workers.length + 1;
+  $('online').textContent = state.topology?.nodes.length ?? new Set(state.workers.map(worker=>worker.pubkey)).size + 1;
   $('network').textContent = state.workers.length ? 'Inference mesh connected' : 'Local inference node';
   $('peers').textContent = `Your node + ${state.workers.length} remote worker${state.workers.length === 1 ? '' : 's'}`;
   const profile = state.contribution, chosen = state.assignedModel ?? profile?.model?.id;
@@ -51,7 +54,7 @@ async function refresh() {
   $('recommendation').textContent = profile?.reason ?? state.recommendation.reason;
   $('assigned-model').textContent = chosen ?? 'Waiting for free memory';
   $('contribution-summary').textContent = (profile?.reason ?? '') + (state.pendingContribution ? ` ${state.pendingContribution.toUpperCase()} queued until current work finishes.` : '');
-  $('contribution-badge').textContent = `${state.contributionLevel.toUpperCase()} · FROM ${profile?.reward ?? 1} LLMESH / REQUEST`;
+  $('contribution-badge').textContent = `${state.contributionLevel.toUpperCase()} · 1 CREDIT / MODEL TOKEN`;
   document.querySelectorAll('[data-level]').forEach(button => button.classList.toggle('selected', button.dataset.level === (state.pendingContribution ?? state.contributionLevel)));
   $('setup').textContent = state.setup.message;
   $('setup-retry-actions').classList.toggle('hidden', state.setup.state !== 'error');
@@ -68,7 +71,7 @@ async function refresh() {
   $('worker-list').replaceChildren();
   for (const worker of state.workers) textRow($('worker-list'), short(worker.pubkey), `${worker.busy ? 'Busy' : 'Idle'} · ${worker.latencyMs.toFixed(0)} ms RTT · ${worker.wallet ? 'wallet ready' : 'no wallet'}`);
   if (!state.workers.length) $('worker-list').textContent = 'No trusted inference workers connected.';
-  renderEnergy(state.energy); renderPayments(state.payments);
+  renderDonations?.(state); renderEnergy(state.energy); renderPayments(state.payments);
   if (first) {
     const energy = state.energy.settings;
     $('energy-rate').value = energy.rate; $('energy-currency').value = energy.currency; $('energy-watts').value = energy.estimatedWatts;
@@ -97,8 +100,8 @@ async function runInference(job, target) {
   inferenceActive = true; $('send').disabled = $('companion-send').disabled = true;
   outputNode = document.createTextNode(''); target.append(outputNode);
   try {
-    const receipt = await api.chat(job);
-    const detail = `Completed using ${receipt.model} on ${receipt.worker === state.pubkey ? 'your node' : short(receipt.worker)} · ${receipt.credits} tokens · ${receipt.route.settlement === 'local-self' ? 'spent and earned back' : receipt.transaction ?? (receipt.settlement === 'settle-pending' ? 'settlement pending' : 'settled')}`;
+    const receipt = await api.chat({...job,privacy:$('privacy-mode').value});
+    const detail = `Completed using ${receipt.model} on ${receipt.worker === state.pubkey ? 'your node' : short(receipt.worker)} · ${receipt.credits} credits (${receipt.promptTokens ?? 0} input + ${receipt.outputTokens ?? 0} output tokens) · ${receipt.route.settlement === 'local-self' ? 'spent and earned back' : receipt.transaction ?? (receipt.settlement === 'settle-pending' ? 'settlement pending' : 'settled')}`;
     for (const id of ['route-status', 'companion-route']) $(id).textContent = detail + (receipt.route.degraded ? ' · Below recommended tier' : '');
     return { receipt, text: outputNode.textContent };
   } finally {
@@ -141,11 +144,11 @@ bind('companion-send', async () => {
 });
 
 async function initialize() {
-  await refresh(); store = await new LocalStore().open();
+  renderDonations=donationControls(api); browserBridge(api); await refresh(); store = await new LocalStore().open();
   companionHistory = await store.get('companion-history') ?? [];
   for (const message of companionHistory) { const row = document.createElement('div'); row.className = 'chat-message'; row.textContent = `${message.role}: ${message.content}`; $('companion-history').append(row); }
   setInterval(() => refresh().catch(error), 1500);
-  const savedView = localStorage.getItem('llmesh-view'); document.querySelector(`[data-view="${['overview', 'companion', 'energy', 'wallet'].includes(savedView) ? savedView : 'overview'}"]`)?.click();
+  const savedView = localStorage.getItem('llmesh-view'); document.querySelector(`[data-view="${['overview', 'companion', 'network', 'donations', 'energy', 'wallet'].includes(savedView) ? savedView : 'overview'}"]`)?.click();
   document.body.dataset.ready = 'true';
 }
 initialize().catch(error);

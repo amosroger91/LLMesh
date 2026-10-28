@@ -10,3 +10,4 @@ models/ollama/
 rust/target/
 rust/fuzz/artifacts/
 rust/fuzz/corpus/
+site/

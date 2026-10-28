@@ -74,7 +74,7 @@ test('signed API streams inference, settles credits and refunds failures', async
   const directory = mkdtempSync(join(tmpdir(), 'llmesh-api-')); const secret = generateSecretKey();
   let fail = false;
   const ollama = { installed: async () => ['qwen3.5:0.8b'], close() {},
-    async *chat() { yield { type: 'delta', text: 'hello' }; if (fail) throw new Error('inference failed'); yield { type: 'done' }; } };
+    async *chat() { yield { type: 'delta', text: 'hello' }; if (fail) throw new Error('inference failed'); yield { type: 'done', tokens: 2, promptTokens: 3 }; } };
   const service = new Service({ directory, secret, network: false, ollama, requirePayments: false }); await service.refresh();
   const server = await startApi(service, { port: 0 });
   const client = generateSecretKey(), pubkey = getPublicKey(client);
@@ -84,15 +84,15 @@ test('signed API streams inference, settles credits and refunds failures', async
   }
   try {
     assert.equal((await request('/v1/accounts', {})).status, 200);
-    assert.equal(service.ledger.account(pubkey).balance, 100);
+    assert.equal(service.ledger.account(pubkey).balance, 100000);
     const job = { model: 'qwen3.5:0.8b', messages: [{ role: 'user', content: 'hi' }], max_tokens: 12, stream: true };
     let response = await request('/v1/chat/completions', job); let text = await response.text();
-    assert.match(text, /hello/); assert.match(text, /\[DONE\]/); assert.equal(service.ledger.account(pubkey).balance, 99);
-    assert.equal(service.ledger.account(service.pubkey).balance, 101);
+    assert.match(text, /hello/); assert.match(text, /\[DONE\]/); assert.equal(service.ledger.account(pubkey).balance, 99995);
+    assert.equal(service.ledger.account(service.pubkey).balance, 100005);
     fail = true; response = await request('/v1/chat/completions', job); text = await response.text();
-    assert.match(text, /inference failed/); assert.equal(service.ledger.account(pubkey).balance, 99);
+    assert.match(text, /inference failed/); assert.equal(service.ledger.account(pubkey).balance, 99995);
     response = await request('/v1/chat/completions', { ...job, max_tokens: -1 });
-    assert.equal(response.status, 400); assert.equal(service.ledger.account(pubkey).balance, 99);
+    assert.equal(response.status, 400); assert.equal(service.ledger.account(pubkey).balance, 99995);
     assert.equal((await fetch(service.apiUrl + '/v1/account')).status, 401);
   } finally { server.closeAllConnections(); await new Promise(r => server.close(r)); await service.close(); rmSync(directory, { recursive: true, force: true }); }
 });

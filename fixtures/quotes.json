@@ -14,12 +14,15 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "model-budget-v1",
-      "priceUnits": 1,
+      "version": "token-usage-v1",
+      "priceUnits": 4608,
+      "reservedCredits": 4608,
+      "creditsPerToken": 1,
       "parametersB": 0.8,
       "maxTokens": 512,
-      "inputCharacters": 2,
-      "basis": "Fixed completion quote by model size, input characters and reserved output budget; not actual-token metering"
+      "contextTokens": 4096,
+      "inputCharacters": 56,
+      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
     }
   },
   {
@@ -37,12 +40,15 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "model-budget-v1",
-      "priceUnits": 2,
+      "version": "token-usage-v1",
+      "priceUnits": 4608,
+      "reservedCredits": 4608,
+      "creditsPerToken": 1,
       "parametersB": 9,
       "maxTokens": 512,
-      "inputCharacters": 5,
-      "basis": "Fixed completion quote by model size, input characters and reserved output budget; not actual-token metering"
+      "contextTokens": 4096,
+      "inputCharacters": 59,
+      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
     }
   },
   {
@@ -60,12 +66,15 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "model-budget-v1",
-      "priceUnits": 3,
+      "version": "token-usage-v1",
+      "priceUnits": 4608,
+      "reservedCredits": 4608,
+      "creditsPerToken": 1,
       "parametersB": 27,
       "maxTokens": 512,
-      "inputCharacters": 2,
-      "basis": "Fixed completion quote by model size, input characters and reserved output budget; not actual-token metering"
+      "contextTokens": 4096,
+      "inputCharacters": 56,
+      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
     }
   },
   {
@@ -83,12 +92,15 @@
       "maxTokens": 1025
     },
     "expected": {
-      "version": "model-budget-v1",
-      "priceUnits": 2,
+      "version": "token-usage-v1",
+      "priceUnits": 5121,
+      "reservedCredits": 5121,
+      "creditsPerToken": 1,
       "parametersB": 2,
       "maxTokens": 1025,
-      "inputCharacters": 2,
-      "basis": "Fixed completion quote by model size, input characters and reserved output budget; not actual-token metering"
+      "contextTokens": 4096,
+      "inputCharacters": 56,
+      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
     }
   },
   {
@@ -106,12 +118,15 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "model-budget-v1",
-      "priceUnits": 1,
+      "version": "token-usage-v1",
+      "priceUnits": 4608,
+      "reservedCredits": 4608,
+      "creditsPerToken": 1,
       "parametersB": 2,
       "maxTokens": 512,
-      "inputCharacters": 6000,
-      "basis": "Fixed completion quote by model size, input characters and reserved output budget; not actual-token metering"
+      "contextTokens": 4096,
+      "inputCharacters": 6054,
+      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
     }
   },
   {
@@ -129,12 +144,15 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "model-budget-v1",
-      "priceUnits": 2,
+      "version": "token-usage-v1",
+      "priceUnits": 4608,
+      "reservedCredits": 4608,
+      "creditsPerToken": 1,
       "parametersB": 2,
       "maxTokens": 512,
-      "inputCharacters": 6001,
-      "basis": "Fixed completion quote by model size, input characters and reserved output budget; not actual-token metering"
+      "contextTokens": 4096,
+      "inputCharacters": 6055,
+      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
     }
   },
   {
@@ -152,12 +170,15 @@
       "maxTokens": 512
     },
     "expected": {
-      "version": "model-budget-v1",
-      "priceUnits": 2,
+      "version": "token-usage-v1",
+      "priceUnits": 4608,
+      "reservedCredits": 4608,
+      "creditsPerToken": 1,
       "parametersB": 2,
       "maxTokens": 512,
-      "inputCharacters": 6002,
-      "basis": "Fixed completion quote by model size, input characters and reserved output budget; not actual-token metering"
+      "contextTokens": 4096,
+      "inputCharacters": 6056,
+      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
     }
   },
   {
@@ -175,12 +196,15 @@
       "maxTokens": 2048
     },
     "expected": {
-      "version": "model-budget-v1",
-      "priceUnits": 3,
+      "version": "token-usage-v1",
+      "priceUnits": 7168,
+      "reservedCredits": 7168,
+      "creditsPerToken": 1,
       "parametersB": 9,
       "maxTokens": 2048,
-      "inputCharacters": 6001,
-      "basis": "Fixed completion quote by model size, input characters and reserved output budget; not actual-token metering"
+      "contextTokens": 5120,
+      "inputCharacters": 6055,
+      "basis": "Refundable maximum reservation; final credits equal reported input plus generated tokens"
     }
   },
   {

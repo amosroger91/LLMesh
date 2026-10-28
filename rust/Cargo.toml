@@ -13,8 +13,8 @@ repository = "https://github.com/amosroger91/LLMesh"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.154", features = ["preserve_order", "float_roundtrip"] }
 wasm-bindgen = "=0.2.129"
-llmesh-proto = { path = "crates/llmesh-proto" }
-llmesh-hw = { path = "crates/llmesh-hw" }
+llmesh-proto = { path = "crates/llmesh-proto", version = "=0.1.0" }
+llmesh-hw = { path = "crates/llmesh-hw", version = "=0.1.0" }
 
 [profile.release]
 lto = "thin"

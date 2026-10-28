@@ -15,3 +15,7 @@ explicit fixtures for numeric object keys and floating-point serialization befor
 using serialized lengths at arbitrary tool-schema pricing boundaries. No other
 planned crate has been added or implicitly declared maintained. Repeat registry,
 advisory and license review when introducing each runtime/security dependency.
+
+The locked `foldhash` dependency uses the permissive OSI-approved Zlib license,
+which is explicitly allowed. Local workspace dependencies carry exact versions
+as well as paths so cargo-deny does not interpret them as wildcard requirements.

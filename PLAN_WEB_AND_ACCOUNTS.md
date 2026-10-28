@@ -2,7 +2,10 @@
 
 Owner-requested extension to [the Rust/Android plan](PLAN_RUST_AND_ANDROID.md).
 This adds targets; it does not delay Node releases or relax the Rust parity gates.
-Status: design, not a shipped web client or account-migration implementation.
+Status: the static WebLLM worker and desktop-signed worker-only QR sessions are
+implemented with a GitHub Pages workflow. Full NIP-46 account login, portable
+root-account recovery, PWA requester mode and encrypted history sync remain design
+work. Current worker pairing is an application-scoped capability, not NIP-46.
 
 ## 1. Product behavior
 

@@ -1,9 +1,10 @@
+import { MAX_RESERVED_CREDITS, usageCredits } from './pricing.js';
 import { Contract, JsonRpcProvider, Wallet, AbiCoder, getBytes, keccak256, randomBytes, formatEther, isAddress, FetchRequest, parseEther, MaxUint256, verifyMessage } from 'ethers';
 const TOKEN_ABI = ['function balanceOf(address) view returns(uint256)', 'function registered(address) view returns(bool)',
   'function issuer() view returns(address)', 'function register(address,bytes32,uint256,bytes)', 'function approve(address,uint256) returns(bool)', 'function allowance(address,address) view returns(uint256)'];
 const ESCROW_ABI = ['function token() view returns(address)', 'function coordinator() view returns(address)',
-  'function version() view returns(uint256)', 'function PRICE() view returns(uint256)', 'function jobs(bytes32) view returns(address payer,address worker,bytes32 nostr,uint64 expires,uint8 state,uint256 amount,uint8 level)',
-  'function lock(bytes32,bytes32,address,uint8)', 'function claimDelivered(bytes32,bytes32,bytes)', 'function refundFailed(bytes32,bytes)', 'function settle(bytes32)', 'function refund(bytes32)'];
+  'function version() view returns(uint256)', 'function PRICE() view returns(uint256)', 'function jobs(bytes32) view returns(address payer,address worker,bytes32 nostr,uint64 expires,uint8 state,uint256 amount,uint256 usedCredits)',
+  'function lock(bytes32,bytes32,address,uint256)', 'function claimDelivered(bytes32,bytes32,uint256,bytes)', 'function refundFailed(bytes32,bytes)', 'function settle(bytes32,uint256)', 'function refund(bytes32)'];
 export class Payments {
   constructor(privateKey, settings = {}) { this.wallet = new Wallet(privateKey); this.settings = settings; this.state = { configured: false, address: this.wallet.address, symbol: 'LLMESH' }; }
   mutate(fn) {
@@ -46,7 +47,7 @@ export class Payments {
     if (network.chainId !== BigInt(settings.chainId)) { provider.destroy(); throw new Error('RPC chain ID mismatch'); }
     const signer = this.wallet.connect(provider), token = new Contract(settings.token, TOKEN_ABI, signer), escrow = new Contract(settings.escrow, ESCROW_ABI, signer);
     const [tokenAddress, coordinator, issuer] = await Promise.all([escrow.token(), escrow.coordinator(), token.issuer()]);
-    if (await escrow.version() !== 3n) throw new Error('Fixed request quotes require escrow version 3; deploy the updated contract');
+    if (await escrow.version() !== 4n) throw new Error('Per-token billing requires escrow version 4; deploy the updated token and escrow contracts');
     if (tokenAddress.toLowerCase() !== settings.token.toLowerCase() || coordinator.toLowerCase() !== issuer.toLowerCase()) { provider.destroy(); throw new Error('Token/escrow issuer mismatch'); }
     this.provider?.destroy(); this.nextNonce = undefined; Object.assign(this, { provider, signer, token, escrow, settings, coordinator });
     this.state = { ...this.state, configured: true, chainId: Number(network.chainId), coordinator, isCoordinator: coordinator.toLowerCase() === this.wallet.address.toLowerCase(), token: settings.token, escrow: settings.escrow };
@@ -82,7 +83,7 @@ export class Payments {
     await tx.wait(1, 120000); return this.refresh();
   }
   async begin(nostr, worker, payment, localIdentity, priceUnits = 1) {
-    if (![1, 2, 3].includes(priceUnits)) throw new Error('Invalid request quote');
+    if (!Number.isSafeInteger(priceUnits) || priceUnits < 1 || priceUnits > MAX_RESERVED_CREDITS) throw new Error('Invalid request quote');
     if (!this.state.configured || !this.state.isCoordinator) throw new Error('A funded Base token escrow and its coordinator wallet must be configured before inference');
     if (!isAddress(worker)) throw new Error('Worker has no receiving wallet');
     let id = payment?.id;
@@ -92,7 +93,7 @@ export class Payments {
       const jobId = keccak256(AbiCoder.defaultAbiCoder().encode(['address','bytes32'], [this.wallet.address, clientId])), price = parseEther(String(priceUnits));
       this.record?.({ id: jobId, worker, state: 'funding', transaction: null });
       await this.approveIfNeeded(price);
-      const tx = await this.submit(overrides => this.escrow.lock(clientId, '0x' + nostr, worker, priceUnits - 1, overrides));
+      const tx = await this.submit(overrides => this.escrow.lock(clientId, '0x' + nostr, worker, priceUnits, overrides));
       this.record?.({ id: jobId, worker, state: 'confirming', transaction: tx.hash });
       await tx.wait(1, 120000); id = jobId;
     }
@@ -105,7 +106,7 @@ export class Payments {
     if (!this.escrow) throw new Error('Worker payment network is not configured');
     const job = await this.escrow.jobs(id);
     if (job.state !== 1n || job.nostr.toLowerCase() !== ('0x' + nostr).toLowerCase() || job.worker.toLowerCase() !== worker.toLowerCase() ||
-        job.amount !== parseEther(String(priceUnits)) || Number(job.level) !== priceUnits - 1 ||
+        job.amount !== parseEther(String(priceUnits)) ||
         Number(job.expires) * 1000 < Date.now() + 180000) throw new Error('Escrow is unfunded, expired, reused, underpriced, or bound to a different identity/worker');
     return job;
   }
@@ -116,13 +117,16 @@ export class Payments {
     const receipt = await tx.wait(1, 120000); return { ...voucher, registered: true, transaction: receipt.hash };
   }
   deliveryDigest(payment, outputHash) {
-    return keccak256(AbiCoder.defaultAbiCoder().encode(['uint256','address','bytes32','bytes32'], [this.state.chainId, this.settings.escrow, payment.id, outputHash]));
+    return keccak256(AbiCoder.defaultAbiCoder().encode(['uint256','address','bytes32','bytes32','uint256','string'], [this.state.chainId, this.settings.escrow, payment.id, outputHash, payment.credits, 'llmesh-usage-v1']));
   }
   async signDelivery(payment, outputHash) {
     if (!this.state.isCoordinator) throw new Error('Only coordinator can acknowledge delivery');
+    usageCredits(payment.promptTokens, payment.outputTokens, payment.priceUnits);
+    if (payment.credits !== payment.promptTokens + payment.outputTokens) throw new Error('Invalid delivery usage');
     return this.wallet.signMessage(getBytes(this.deliveryDigest(payment, outputHash)));
   }
   async acceptDelivery(payment) {
+    if (payment.credits !== usageCredits(payment.promptTokens, payment.outputTokens)) throw new Error('Invalid delivery usage');
     if (payment.chainId !== this.state.chainId || payment.escrow?.toLowerCase() !== this.settings.escrow?.toLowerCase() ||
         verifyMessage(getBytes(this.deliveryDigest(payment, payment.outputHash)), payment.attestation).toLowerCase() !== this.coordinator.toLowerCase()) throw new Error('Invalid delivery attestation');
     const job = await this.escrow.jobs(payment.id);
@@ -141,6 +145,7 @@ export class Payments {
       return confirmed?.status === 1 ? confirmed.hash : null;
     }
     if (job.state !== 1n) throw new Error('Settlement conflict: escrow is not funded');
+    if (!Number.isSafeInteger(payment.credits) || payment.credits < 0 || BigInt(payment.credits) * parseEther('1') > job.amount) throw new Error('Invalid settlement usage');
     let tx;
     if (previous?.settlement_tx) {
       const confirmed = await this.provider.getTransactionReceipt(previous.settlement_tx);
@@ -148,8 +153,8 @@ export class Payments {
     }
     if (!tx) {
       tx = await this.submit(overrides => payment.attestation
-        ? this.escrow.claimDelivered(payment.id, payment.outputHash, payment.attestation, overrides)
-        : this.escrow.settle(payment.id, overrides));
+        ? this.escrow.claimDelivered(payment.id, payment.outputHash, payment.credits, payment.attestation, overrides)
+        : this.escrow.settle(payment.id, payment.credits, overrides));
       this.record?.({ ...payment, state: 'settle-broadcast', transaction: tx.hash });
     }
     const receipt = await tx.wait(1, 120000);

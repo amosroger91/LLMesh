@@ -6,7 +6,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { AUTO_MODEL } from './router.js';
 
 export function openApi(base) {
-  return { openapi: '3.1.0', info: { title: 'LLMesh local inference', version: '0.1.0' }, servers: [{ url: base }],
+  const document = { openapi: '3.1.0', info: { title: 'LLMesh local inference', version: '0.1.0' }, servers: [{ url: base }],
     security: [{ bearerAuth: [] }], components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
     paths: { '/v1/models': { get: { responses: { 200: { description: 'OpenAI model list' } } } },
       '/v1/chat/completions': { post: { requestBody: { required: true, content: { 'application/json': { schema: {
@@ -15,6 +15,10 @@ export function openApi(base) {
           stream: { type: 'boolean', default: false }, complexity: { enum: ['auto','simple','standard','complex'], default: 'auto' },
           allow_degraded: { type: 'boolean', default: true, description: 'Use the best available model below the recommended tier; false requires the recommended capability.' }, tools: { type: 'array', items: { type: 'object' } }, tool_choice: { enum: ['auto', 'none'] }, max_tokens: { type: 'integer', minimum: 1, description: 'Output is capped at 2048 tokens; larger client limits are accepted and clamped.' }, max_completion_tokens: { type: 'integer', minimum: 1 } } } } } },
         responses: { 200: { description: 'Chat completion or streamed SSE chunks' }, 400: { description: 'Invalid request or unavailable worker' }, 401: { description: 'Invalid credentials' } } } } } };
+  const properties=document.paths['/v1/chat/completions'].post.requestBody.content['application/json'].schema.properties;
+  properties.privacy={type:'string',enum:['mesh-only','allow-third-party'],default:'mesh-only',description:'Explicit consent is required to send prompts to donated third-party APIs'};
+  document.paths['/v1/swarm/completions']={post:{requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['tasks'],properties:{tasks:{type:'array',minItems:1,maxItems:32,items:{type:'object'}},max_concurrency:{type:'integer',minimum:1,maximum:16},stream:{type:'boolean'}}}}}},responses:{200:{description:'Ordered task results or indexed SSE events'}}}};
+  return document;
 }
 function bearer(header, key) {
   const actual = Buffer.from(header?.startsWith('Bearer ') ? header.slice(7) : ''); const expected = Buffer.from(key);
@@ -65,6 +69,16 @@ export async function startApi(service, { port = 7337, host = '127.0.0.1', tls }
       }
       if (req.method === 'POST' && pathname === '/v1/routes/preview') {
         const input = JSON.parse(raw); return json(200, service.route({ ...input, maxTokens: input.max_completion_tokens ?? input.max_tokens }));
+      }
+      if(req.method==='POST'&&pathname==='/v1/swarm/completions'){
+        const input=JSON.parse(raw),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),180000);
+        res.on('close',()=>controller.abort());
+        try{if(input.stream)res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store','X-Accel-Buffering':'no'});
+          const result=await service.swarm(pubkey,Array.isArray(input.tasks)?input.tasks.map(task=>({...task,maxTokens:task.max_completion_tokens??task.max_tokens??task.maxTokens,privacy:task.privacy??input.privacy,allow_third_party:task.allow_third_party??input.allow_third_party})):input.tasks,{maxConcurrency:input.max_concurrency??16,signal:controller.signal,onEvent:event=>{
+            if(!input.stream)return;if(res.writableLength>1048576){controller.abort();throw new Error('Client too slow');}res.write(`data: ${JSON.stringify(event)}\n\n`);
+          }});
+          if(input.stream)res.end(`data: ${JSON.stringify(result)}\n\ndata: [DONE]\n\n`);else json(200,result);
+        }finally{clearTimeout(timer);}return;
       }
       if (req.method !== 'POST' || pathname !== '/v1/chat/completions') return error(404, 'Not found');
       const input = JSON.parse(raw), stream = input.stream === true;

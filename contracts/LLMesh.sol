@@ -5,12 +5,11 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-/// @notice Prototype grant issuer. Grants require a Nostr-authenticated issuer voucher.
 contract LLMeshToken is ERC20 {
     address public immutable issuer;
     mapping(address => bool) public registered;
     mapping(bytes32 => bool) public claimedNostr;
-    uint256 public constant STARTER = 100 ether;
+    uint256 public constant STARTER = 100000 ether;
     event Registered(address indexed wallet, bytes32 indexed nostr);
     constructor(address issuer_) ERC20("LLMesh Compute", "LLMESH") {
         require(issuer_ != address(0), "zero issuer"); issuer = issuer_;
@@ -24,43 +23,51 @@ contract LLMeshToken is ERC20 {
     }
 }
 
-/// @notice Fund before inference. Coordinator can only release to the preselected worker or refund payer.
+/// @notice Reserve a bounded budget; settle one ERC-20 unit per reported model token.
+/// Usage is attested by the trusted coordinator, not proved by the chain.
 contract LLMeshEscrow {
     using SafeERC20 for IERC20;
     IERC20 public immutable token;
     address public immutable coordinator;
     uint256 public constant PRICE = 1 ether;
-    struct Job { address payer; address worker; bytes32 nostr; uint64 expires; uint8 state; uint256 amount; uint8 level; }
+    uint256 public constant MAX_CREDITS = 34816;
+    struct Job { address payer; address worker; bytes32 nostr; uint64 expires; uint8 state; uint256 amount; uint256 usedCredits; }
     mapping(bytes32 => Job) public jobs;
     event Locked(bytes32 indexed id, address indexed payer, address indexed worker, bytes32 nostr);
-    event Settled(bytes32 indexed id, address indexed worker);
+    event Settled(bytes32 indexed id, address indexed worker, uint256 credits, uint256 refundedCredits);
     event Refunded(bytes32 indexed id, address indexed payer);
     constructor(IERC20 token_, address coordinator_) {
         require(address(token_) != address(0) && coordinator_ != address(0), "zero address"); token = token_; coordinator = coordinator_;
     }
-    function version() external pure returns (uint256) { return 3; }
+    function version() external pure returns (uint256) { return 4; }
     function jobId(address payer, bytes32 clientId) public pure returns (bytes32) { return keccak256(abi.encode(payer, clientId)); }
-    function lock(bytes32 id, bytes32 nostr, address worker, uint8 level) external {
-        _lock(jobId(msg.sender, id), nostr, worker, level);
-    }
-    function _lock(bytes32 id, bytes32 nostr, address worker, uint8 level) internal {
+    function lock(bytes32 clientId, bytes32 nostr, address worker, uint256 reservedCredits) external {
+        bytes32 id = jobId(msg.sender, clientId);
         require(jobs[id].state == 0 && worker != address(0) && nostr != bytes32(0), "invalid job");
-        require(level <= 2, "invalid contribution level");
-        uint256 amount = PRICE * (uint256(level) + 1);
-        jobs[id] = Job(msg.sender, worker, nostr, uint64(block.timestamp + 1 hours), 1, amount, level);
+        require(reservedCredits > 0 && reservedCredits <= MAX_CREDITS, "invalid credit budget");
+        uint256 amount = PRICE * reservedCredits;
+        jobs[id] = Job(msg.sender, worker, nostr, uint64(block.timestamp + 1 hours), 1, amount, 0);
         token.safeTransferFrom(msg.sender, address(this), amount);
         emit Locked(id, msg.sender, worker, nostr);
     }
-    function settle(bytes32 id) external {
-        require(msg.sender == coordinator && jobs[id].state == 1 && block.timestamp < uint256(jobs[id].expires) + 1 days, "not settleable");
-        Job storage job = jobs[id]; job.state = 2; token.safeTransfer(job.worker, job.amount); emit Settled(id, job.worker);
-    }
-    function claimDelivered(bytes32 id, bytes32 outputHash, bytes calldata signature) external {
+    function _settle(bytes32 id, uint256 credits) internal {
         Job storage job = jobs[id];
-        require(job.state == 1 && outputHash != bytes32(0), "invalid delivery");
-        bytes32 digest = keccak256(abi.encode(block.chainid, address(this), id, outputHash));
+        require(job.state == 1 && credits <= job.amount / PRICE, "invalid usage");
+        job.state = 2; job.usedCredits = credits;
+        uint256 paid = credits * PRICE;
+        if (paid > 0) token.safeTransfer(job.worker, paid);
+        if (job.amount > paid) token.safeTransfer(job.payer, job.amount - paid);
+        emit Settled(id, job.worker, credits, (job.amount - paid) / PRICE);
+    }
+    function settle(bytes32 id, uint256 credits) external {
+        require(msg.sender == coordinator && block.timestamp < uint256(jobs[id].expires) + 1 days, "not settleable");
+        _settle(id, credits);
+    }
+    function claimDelivered(bytes32 id, bytes32 outputHash, uint256 credits, bytes calldata signature) external {
+        require(outputHash != bytes32(0), "invalid delivery");
+        bytes32 digest = keccak256(abi.encode(block.chainid, address(this), id, outputHash, credits, "llmesh-usage-v1"));
         require(ECDSA.recover(MessageHashUtils.toEthSignedMessageHash(digest), signature) == coordinator, "invalid completion receipt");
-        job.state = 2; token.safeTransfer(job.worker, job.amount); emit Settled(id, job.worker);
+        _settle(id, credits);
     }
     function refundFailed(bytes32 id, bytes calldata signature) external {
         Job storage job = jobs[id];

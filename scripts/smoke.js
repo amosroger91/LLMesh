@@ -30,6 +30,18 @@ app.on('browser-window-created', (_event, window) => {
       clipboard.writeText(clipboardBefore);
       const logoVisible = await window.webContents.executeJavaScript(`document.querySelector('.brand-logo').complete && document.querySelector('.brand-logo').naturalWidth > 0`);
       assert.equal(logoVisible, true);
+      const pairing = await window.webContents.executeJavaScript(`(async()=>{
+        const key=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveKey']);
+        const certificate=await window.llmesh.browserPair({peerId:'smoke-peer',publicKey:await crypto.subtle.exportKey('jwk',key.publicKey)});
+        const payload=JSON.parse(certificate.content),deviceId='e'.repeat(64);
+        let rejected=false;try{await window.llmesh.browserApprove({deviceId,name:'Test browser',nonce:'wrong'});}catch{rejected=true;}
+        if(!rejected)throw new Error('Wrong pairing nonce was accepted');
+        const approved=await window.llmesh.browserApprove({deviceId,name:'Test browser',nonce:payload.nonce});
+        let reused=false;try{await window.llmesh.browserApprove({deviceId:'f'.repeat(64),name:'Other browser',nonce:payload.nonce});}catch{reused=true;}
+        await window.llmesh.browserRemove(deviceId);
+        return {scope:approved.scope,reused,kind:certificate.kind,accountMatches:approved.account===certificate.pubkey};
+      })()`);
+      assert.deepEqual(pairing,{scope:'worker-only',reused:true,kind:30078,accountMatches:true});
       // Exercise the actual renderer/preload chat path with deterministic streamed output.
       const chats = [];
       ipcMain.removeHandler('chat');
@@ -77,7 +89,7 @@ app.on('browser-window-created', (_event, window) => {
       if (!overviewVisible) throw new Error('Overview navigation did not activate');
       await new Promise(resolve => setTimeout(resolve, 150));
       writeFileSync(resolve('.llmesh/smoke.png'), (await window.webContents.capturePage()).toPNG());
-      for (const view of ['energy', 'wallet', 'companion']) {
+      for (const view of ['energy', 'wallet', 'companion', 'network', 'donations']) {
         await window.webContents.executeJavaScript(`document.querySelector('[data-view="${view}"]').click()`);
         await new Promise(resolve => setTimeout(resolve, 100));
         writeFileSync(resolve(`.llmesh/smoke-${view}.png`), (await window.webContents.capturePage()).toPNG());

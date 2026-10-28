@@ -23,7 +23,8 @@
     "dist": "electron-builder",
     "models:bundle": "node scripts/bundle-model.js",
     "icons:build": "electron scripts/build-icons.cjs",
-    "check:syntax": "node scripts/check.js"
+    "check:syntax": "node scripts/check.js",
+    "build:web": "node scripts/build-web.js"
   },
   "engines": {
     "node": ">=22.16"
@@ -33,10 +34,14 @@
     "zod": "^4.6.6"
   },
   "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.86",
     "@openzeppelin/contracts": "^5.6.1",
     "ethers": "^6.17.0",
     "hyperswarm": "^4.0.0",
+    "jsqr": "^1.4.0",
     "nostr-tools": "^2.0.0",
+    "peerjs": "^1.5.5",
+    "qrcode": "^1.5.4",
     "systeminformation": "^5.0.0"
   },
   "devDependencies": {

@@ -2,7 +2,7 @@
 yanked = "deny"
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "Unicode-3.0", "ISC"]
+allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "Unicode-3.0", "ISC", "Zlib"]
 confidence-threshold = 0.95
 
 [bans]

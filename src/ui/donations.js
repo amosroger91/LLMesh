@@ -1,0 +1,14 @@
+export function donationControls(api){
+  const $=id=>document.getElementById(id),note=value=>{$('donor-note').textContent=value;};
+  const values=()=>({kind:$('donor-kind').value,baseUrl:$('donor-base').value.trim(),apiKey:$('donor-key').value,model:$('donor-model').value.trim(),dailyLimit:Number($('donor-limit').value),freeTierConfirmed:$('donor-free').checked,maxTokensField:$('donor-output-field').value});
+  $('donor-kind').onchange=()=>{$('donor-base').value={openrouter:'https://openrouter.ai/api/v1',groq:'https://api.groq.com/openai/v1',custom:''}[$('donor-kind').value];};
+  $('donor-discover').onclick=async()=>{try{note('Fetching models…');const models=await api.providerModels(values());$('donor-models').replaceChildren();for(const model of models){const option=document.createElement('option');option.value=model.id;option.label=model.name;$('donor-models').append(option);}note(`${models.length} models found. Choose or paste a model ID.`);}catch(error){note(error.message);}};
+  $('donor-save').onclick=async()=>{try{await api.providerAdd(values());$('donor-key').value='';note('Donation enabled. Only requests that allow third-party inference can use it.');}catch(error){note(error.message);}};
+  return state=>{const container=$('donor-list');container.replaceChildren();for(const donor of state.donations??[]){const card=document.createElement('article');card.className='session';const title=document.createElement('strong');title.textContent=`${donor.provider} · ${donor.upstreamModel}`;
+    const usage=document.createElement('p');usage.textContent=`${donor.state} · ${donor.usage.input_tokens} input + ${donor.usage.output_tokens} output tokens today · ${donor.remainingCredits} allowance left · ${donor.usage.requests} completed requests`;
+    const uncertain=document.createElement('small');uncertain.textContent=`${donor.usage.uncertain_tokens??0} tokens conservatively reserved for failed/unknown usage. ${donor.error??''}`;
+    const toggle=document.createElement('button');toggle.className='secondary';toggle.textContent=donor.state==='disabled'?'Enable donation':'Pause donation';toggle.onclick=()=>api.providerToggle(donor.providerId).catch(error=>note(error.message));
+    const remove=document.createElement('button');remove.className='secondary';remove.textContent='Remove';remove.onclick=()=>api.providerRemove(donor.providerId).catch(error=>note(error.message));
+    card.append(title,usage,uncertain,toggle,remove);for(const call of donor.calls??[]){const detail=document.createElement('small');detail.style.display='block';detail.textContent=`${call.reported_model??call.configured_model} · ${call.input_tokens+call.output_tokens} model tokens`;card.append(detail);}container.append(card);
+  }};
+}

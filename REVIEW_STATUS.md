@@ -31,7 +31,9 @@ Added: unified pure placement planner, managed/external runtime pool, per-instan
 
 Remaining: deeper Service decomposition, complete GPU/instance controls, concurrent energy attribution, idle-baseline subtraction, full chaos/property/fuzz coverage, real two-Service/local-DHT integration, coverage thresholds and hosted CI results. Expanded CLI, cross-platform packaging and release automation are still in progress. Production measurements need separate runs.
 
-R1–R7 remain product roadmap work: payment channels/metered prices, group management, queueing/retry scheduling, broader API features, signed model catalogs/benchmarks, UI and recovery features, and observability. The earlier user preference for automatic model selection remains in force; the roadmap's optional model picker has not been added.
+Added after the initial review: metered billing at one credit per reported input/output model token, refundable reservations, 100,000-credit starter grants, escrow v4 usage-bound delivery receipts, worker-only browser QR enrollment, WebLLM/PeerJS worker transport, a network graph, bounded swarm tasks and opt-in donated API inference. Mesh-only is the default and is enforced independently by API runtimes. Provider usage, quota failures and actual reported models are recorded without exposing keys. A local self-request cannot mint rewards.
+
+Remaining roadmap work includes audited payment channels, group PKI, broader retry/chaos testing, complete recovery, signed model catalogs/benchmarks and observability. Automatic native model selection remains in force; donation configuration selects an upstream model, not the native contribution model.
 
 ## Branding
 

@@ -27,10 +27,10 @@ function estimate(worker, model, maxTokens) {
   const metric = worker.metrics?.[model.id];
   const mode = worker.hardware?.mode ?? 'gpu';
   const cold = worker.loadedModel && worker.loadedModel !== model.id;
-  const fallbackFirst = (mode === 'cpu' ? 600 + model.parametersB * 350 : 300 + model.parametersB * 35) + (cold ? 2000 : 0);
+  const fallbackFirst = worker.source === 'third-party' ? 250 : (mode === 'cpu' ? 600 + model.parametersB * 350 : 300 + model.parametersB * 35) + (cold ? 2000 : 0);
   const legacy = worker.models.length === 1;
   const first = metric?.firstTokenMs ?? (legacy ? worker.firstTokenMs : undefined) ?? fallbackFirst;
-  const speed = metric?.tokensPerSecond ?? (legacy ? worker.tokensPerSecond : undefined) ?? Math.max(1, (mode === 'cpu' ? 12 : 90) / Math.sqrt(model.parametersB));
+  const speed = metric?.tokensPerSecond ?? (legacy ? worker.tokensPerSecond : undefined) ?? (worker.source==='third-party'?100:Math.max(1, (mode === 'cpu' ? 12 : 90) / Math.sqrt(model.parametersB)));
   const latency = worker.latencyMs ?? 100;
   // First-token latency dominates; longer jobs also account for expected generation time.
   return { firstTokenMs: first + latency, completionMs: first + latency + maxTokens / speed * 1000,
@@ -42,13 +42,15 @@ export function planRoute(job, workers, now = Date.now()) {
   const complexity = assessComplexity(job.messages, job.complexity ?? 'auto', job.maxTokens);
   const automatic = !job.model || ['auto', AUTO_MODEL].includes(job.model);
   let options = [];
+  const models = [...new Map([...catalog.models,...workers.flatMap(worker=>worker.modelCatalog??[])].map(model=>[model.id,model])).values()];
   for (const worker of workers) {
-    if (worker.busy !== 0 || !Number.isFinite(worker.seen) || now - worker.seen >= 35000 || worker.seen > now + 60000 ||
+    if ((worker.source==='third-party'&&job.privacy!=='allow-third-party') || (job.tools?.length && worker.supportsTools === false) || worker.busy !== 0 || !Number.isFinite(worker.seen) || now - worker.seen >= 35000 || worker.seen > now + 60000 ||
         (job.workerKey && job.workerKey !== worker.pubkey)) continue;
-    for (const model of catalog.models) {
+    for (const model of models) {
       if (!worker.models.includes(model.id) || (!automatic && job.model !== model.id)) continue;
-      if (Number.isFinite(worker.hardware?.maxModelRank) && model.rank > worker.hardware.maxModelRank) continue;
-      const pricing = quoteWork(model, job.messages, job.maxTokens ?? 512, job.tools);
+      if (worker.source !== 'third-party' && Number.isFinite(worker.hardware?.maxModelRank) && model.rank > worker.hardware.maxModelRank) continue;
+      const pricing = quoteWork(model, job.messages, job.maxTokens ?? 512, job.tools, job.contextTokens);
+      if(worker.creditBudget!=null&&pricing.reservedCredits>worker.creditBudget)continue;
       for(let slot=0;slot<(worker.free??1);slot++)options.push({ worker, model, pricing, estimate: estimate(worker, model, job.maxTokens ?? 512) });
     }
   }
@@ -64,14 +66,17 @@ export function planRoute(job, workers, now = Date.now()) {
     }
   }
   if (!options.length) throw new Error('No available trusted worker for the requested model and payment network');
-  // Each additional token must save at least 250 ms of latency-weighted work.
-  // This favors cheaper near-ties while retaining a strong preference for speed.
-  for (const option of options) option.estimate.routingScore = option.estimate.score + (option.pricing.priceUnits - 1) * 250;
+  // Every model has the same per-token rate. A refundable reservation is not a price penalty.
+  for (const option of options) {
+    option.estimate.fitPenaltyMs = option.worker.source==='third-party'?0:Math.max(0, option.model.rank - complexity.minimumRank) * 100;
+    option.estimate.routingScore = option.estimate.score + option.estimate.fitPenaltyMs - (option.worker.source==='third-party'?150:0);
+  }
   options.sort((a, b) => a.estimate.routingScore - b.estimate.routingScore || a.pricing.priceUnits - b.pricing.priceUnits || a.model.rank - b.model.rank || a.worker.pubkey.localeCompare(b.worker.pubkey));
   const best = options[0]; degraded ||= best.model.rank < complexity.minimumRank;
-  return { model: best.model.id, worker: best.worker.pubkey, instanceId:best.worker.instanceId, wallet: best.worker.wallet, contribution: best.worker.contribution ?? 'low', priceUnits: best.pricing.priceUnits, pricing: best.pricing, complexity, automatic, degraded,
+  return { source: best.worker.source??'mesh', privacy:job.privacy??'mesh-only', provider:best.model.provider, upstreamModel:best.model.upstreamModel, model: best.model.id, worker: best.worker.pubkey, instanceId:best.worker.instanceId, wallet: best.worker.wallet, contribution: best.worker.contribution ?? 'low', priceUnits: best.pricing.priceUnits, pricing: best.pricing, complexity, automatic, degraded,
     estimate: best.estimate, eligibleOptions: options.length,
     reason: `${complexity.level} request → ${best.model.id} on ${best.worker.local ? 'your node' : best.worker.pubkey.slice(0, 12) + '…'}; ${Math.round(best.estimate.firstTokenMs)} ms estimated first token (${best.estimate.basis}).` +
-      ` ${best.pricing.priceUnits} LLMESH quoted; routing includes a 250 ms penalty per extra LLMESH.` +
+      ` 1 credit per input/output token; ${best.pricing.reservedCredits} credits reserved, unused credits returned.` +
+      (best.worker.source==='third-party'?' Prompt sent to a donated third-party API with your permission.':'') +
       (degraded ? ' Selected model is below the recommended capability tier.' : '') };
 }

@@ -24,7 +24,7 @@ test('paid API funds ERC-20 escrow before dispatch, pays worker, refunds failure
     payments = new Payments(signer.privateKey, config); await payments.connect();
     service = new Service({ directory, secret: generateSecretKey(), payments, network: false, ollama: { installed: async () => [], close() {} } });
     await payments.register(service.pubkey); await payments.register(service.pubkey);
-    assert.equal((await payments.refresh()).balance, '100.0');
+    assert.equal((await payments.refresh()).balance, '100000.0');
     const workerKey = 'b'.repeat(64), worker = chain.accounts[2].address; let fail = false, dispatched = 0, contribution = 'low';
     const workerPayments = new Payments(chain.accounts[2].privateKey, config); await workerPayments.connect();
     workerService = new Service({ directory: join(directory, 'worker'), secret: generateSecretKey(), payments: workerPayments, network: false, ollama: { close() {} } });
@@ -34,12 +34,12 @@ test('paid API funds ERC-20 escrow before dispatch, pays worker, refunds failure
         assert.equal(job.model, 'qwen3.5:0.8b');
         dispatched++; const locked = await escrow.jobs(job.payment.id);
         assert.equal(locked.state, 1n); assert.equal(locked.worker.toLowerCase(), worker.toLowerCase());
-        assert.equal(locked.amount, parseEther(job.maxTokens > 1024 ? '2' : '1'));
+        assert.equal(locked.amount, parseEther(String(job.payment.priceUnits)));
         if (job.maxTokens < 1024) await assert.rejects(workerService.acceptWorkerPayment({ ...job, maxTokens: 2048 }), /underpriced/);
         await workerService.acceptWorkerPayment(job);
         await assert.rejects(workerService.acceptWorkerPayment(job), /reused payment/);
         await assert.rejects(payments.verify(job.payment.id, service.pubkey, worker, 99), /underpriced/);
-        if (fail) throw Object.assign(new Error('worker failed'), { refundAuthorization: await workerPayments.signRefund(job.payment) }); onDelta('paid response'); return { worker: workerKey, tokens: 2 };
+        if (fail) throw Object.assign(new Error('worker failed'), { refundAuthorization: await workerPayments.signRefund(job.payment) }); onDelta('paid response'); return { worker: workerKey, tokens: 2, promptTokens: 3 };
       }, async close() {}
     };
     api = await startApi(service, { port: 0 });
@@ -51,13 +51,13 @@ test('paid API funds ERC-20 escrow before dispatch, pays worker, refunds failure
     assert.equal(response.status, 200, JSON.stringify(result)); assert.equal(result.object, 'chat.completion');
     assert.equal(result.model, 'qwen3.5:0.8b'); assert.equal(result.llmesh_receipt.route.degraded, true); assert.equal(result.llmesh_receipt.route.automatic, true);
     assert.equal(result.choices[0].message.content, 'paid response'); assert.equal(result.llmesh_receipt.settlement, 'settle-pending'); assert.match(service.receipt(result.llmesh_receipt.id, service.pubkey).transaction, /^0x/);
-    assert.equal(await token.balanceOf(worker), parseEther('1')); assert.equal((await payments.refresh()).balance, '99.0');
-    contribution = 'medium'; response = await request(); assert.equal(response.status, 200); assert.equal((await response.json()).llmesh_receipt.credits, 1);
-    contribution = 'high'; response = await request(); assert.equal(response.status, 200); assert.equal((await response.json()).llmesh_receipt.credits, 1);
-    assert.equal(await token.balanceOf(worker), parseEther('3')); assert.equal((await payments.refresh()).balance, '97.0');
+    assert.equal(await token.balanceOf(worker), parseEther('5')); assert.equal((await payments.refresh()).balance, '99995.0');
+    contribution = 'medium'; response = await request(); assert.equal(response.status, 200); assert.equal((await response.json()).llmesh_receipt.credits, 5);
+    contribution = 'high'; response = await request(); assert.equal(response.status, 200); assert.equal((await response.json()).llmesh_receipt.credits, 5);
+    assert.equal(await token.balanceOf(worker), parseEther('15')); assert.equal((await payments.refresh()).balance, '99985.0');
     response = await request({ allow_degraded: false }); assert.equal(response.status, 400); assert.equal(dispatched, 3);
-    response = await request({ max_tokens: 2048 }); assert.equal(response.status, 200); assert.equal((await response.json()).llmesh_receipt.credits, 2);
-    fail = true; response = await request(); assert.equal(response.status, 400); assert.equal((await payments.refresh()).balance, '95.0');
+    response = await request({ max_tokens: 2048 }); assert.equal(response.status, 200); assert.equal((await response.json()).llmesh_receipt.credits, 5);
+    fail = true; response = await request(); assert.equal(response.status, 400); assert.equal((await payments.refresh()).balance, '99980.0');
     const models = await (await fetch(service.apiUrl + '/v1/models', { headers: { Authorization: 'Bearer ' + service.apiKey } })).json();
     assert.equal(models.object, 'list'); assert.ok(models.data.some(model => model.id === 'llmesh-auto')); assert.ok(models.data.some(model => model.id === 'qwen3.5:0.8b'));
     assert.equal(dispatched, 5);
@@ -66,8 +66,8 @@ test('paid API funds ERC-20 escrow before dispatch, pays worker, refunds failure
     assert.equal(await provider.getTransactionCount(signer.address, 'latest'), fundingNonce + 5);
     assert.equal(await token.allowance(signer.address, config.escrow), MaxUint256);
     assert.equal(new Set(funded.map(payment => payment.id)).size, 5);
-    await Promise.all(funded.map(payment => payments.settle(payment)));
-    assert.equal((await payments.refresh()).balance, '90.0');
+    await Promise.all(funded.map(payment => payments.settle({...payment,credits:1})));
+    assert.equal((await payments.refresh()).balance, '99975.0');
     payments.state.configured = false; response = await request(); assert.equal(response.status, 400); assert.equal(dispatched, 5);
   } finally {
     if (api) { api.closeAllConnections(); await new Promise(resolve => api.close(resolve)); }
