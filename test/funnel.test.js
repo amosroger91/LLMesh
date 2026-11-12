@@ -258,3 +258,51 @@ test('mesh capabilities carry a verified funnel and reject a public HTTP address
     assert.equal(good.sent.at(-1).event.content.includes(url), true);
   } finally { bad.destroy(); good.destroy(); await mesh.close(); }
 });
+
+test('a relay expires sessions that never upgrade', async () => {
+  const secret = generateSecretKey();
+  const relay = new FunnelRelay({ token: TOKEN, upgradeTimeoutMs: 50 });
+  await relay.listen(0, '127.0.0.1');
+  try {
+    const event = finalizeEvent({ kind: 30078, created_at: Math.floor(Date.now() / 1000), tags: [['d', 'llmesh-funnel-v1']], content: JSON.stringify({ v: 1, role: 'node', protocol: FUNNEL_PROTOCOL, nonce: 'cd'.repeat(16) }) }, secret);
+    const created = await fetch(relay.origin + '/v1/funnel/sessions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ v: 1, event }) });
+    assert.equal(created.status, 201);
+    await created.arrayBuffer();
+    assert.equal(relay.sessions.size, 1);
+    await new Promise(resolve => setTimeout(resolve, 120));
+    assert.equal(relay.sessions.size, 0);
+  } finally { await relay.close(); }
+});
+
+test('a client disconnect frees the relay slot and cancels the local request', async () => {
+  const secret = generateSecretKey();
+  let localClosed;
+  const closed = new Promise(resolve => { localClosed = resolve; });
+  const local = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write('data: start\n\n');
+    res.on('close', () => localClosed());
+  });
+  const relay = new FunnelRelay({ token: TOKEN, allow: [getPublicKey(secret)] });
+  await listen(local);
+  await relay.listen(0, '127.0.0.1');
+  const tunnel = new FunnelTunnel({ relay: relay.origin, token: TOKEN, secret, apiPort: local.address().port });
+  try {
+    const opened = await tunnel.open();
+    const controller = new AbortController();
+    const response = await fetch(opened.publicUrl + '/stream', { signal: controller.signal });
+    const reader = response.body.getReader();
+    await reader.read();
+    const [session] = relay.sessions.values();
+    assert.equal(session.pending.size, 1);
+    controller.abort();
+    await closed;
+    for (let i = 0; i < 50 && session.pending.size; i += 1) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(session.pending.size, 0);
+  } finally {
+    await tunnel.close();
+    await relay.close();
+    local.closeAllConnections?.();
+    await new Promise(resolve => local.close(resolve));
+  }
+});
