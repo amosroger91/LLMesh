@@ -12,7 +12,7 @@ LLMesh turns your computer into an AI node. It detects your hardware, selects a 
 
 You choose how much computing power to contribute. Use the machine in front of you, share a home GPU with your other devices, or build a trusted group that pools access to larger models.
 
-**Open and go:** desktop startup opens AI Companion and automatically starts serving. Companion prefers your idle native model, then eligible mesh hardware when local inference is occupied. A local Nostr identity and 10,000 starter credits are created without wallet funding or gas. Base settlement is a separate, optional mode.
+**Open and go:** desktop startup opens AI Companion and automatically starts serving. Companion prefers your idle native model, then eligible mesh hardware when local inference is occupied. A local Nostr identity and 100,000 starter credits are created without wallet funding or gas. Base settlement is a separate, optional mode.
 
 **Current status:** an Electron/Node implementation with local inference, trusted-peer whole-request routing, an issuer-scoped credit ledger, browser workers, and an opt-in authenticated API funnel. Credits work without a cryptocurrency deployment. Optional Base contracts exist, but no live LLMESH token or escrow deployment is supplied; real-money cash-out is not available. The experimental distributed-model work is a planner/mock, a static compatibility checker, and a disabled sidecar lifecycle foundation—not Petals inference or model sharding in production. Native Android, full Nostr remote signing, the full Rust daemon, and the downloadable installer matrix remain roadmap work.
 
@@ -36,7 +36,7 @@ The ambition is to put more of AI's infrastructure in the hands of the people wh
 | Streaming mesh inference | Authenticated, Noise-encrypted Hyperswarm connections between trusted nodes |
 | Complexity-aware routing | Recommends a tier, then weighs availability, latency, throughput and price |
 | OpenAI-compatible API | Model discovery, streamed chat, function tool calls, route previews and receipts |
-| Issuer-scoped credits | 10,000 non-transferable starter credits; metered work settlements, fee-free transfer of eligible earned credits, and backed-credit accounting |
+| Issuer-scoped credits | 100,000 non-transferable starter credits and metered work settlements. Transfers of earned credits and backed-credit accounting are not implemented yet |
 | Internet funnel | Publishes that same authenticated API at a verified public URL for phones and cloud clients. Off by default |
 | AI companion | A chat interface to that same mesh pipeline, with cancellation and local history |
 | Network map | Live graph of known trusted desktops, their linked browser devices and your donated API workers |
@@ -146,8 +146,6 @@ for chunk in response:
 | `POST /v1/swarm/completions` | Up to 32 independent agent tasks, bounded by available slots and a concurrency limit of 16 |
 | `POST /v1/accounts` | Registration / configured relayed starter grant |
 | `GET /v1/account` | Local account or linked wallet state |
-| `GET /v1/credits` | Authenticated issuer-scoped balance and transfer history |
-| `POST /v1/credits/transfers` | Fee-free internal transfer of eligible credits; starter grants cannot be sent directly |
 
 Supports text and text-part arrays, developer messages, assistant tool calls and tool results. Tools execute in the requesting application. Limits: 256 messages, 128 function definitions, 90,000 serialized input characters and a 512 KiB HTTP body. Positive output limits above 2048 are accepted and clamped; receipts show requested and effective limits. Context scales from 4096 to 32768 tokens. Images, audio, embeddings and complete OpenAI API parity are not implemented.
 
@@ -224,7 +222,7 @@ Any future real distributed runtime requires a pinned and reviewed environment, 
 
 **Using another node:** credits move one-for-one from requester to worker at the serving model's rate. A completion with 300 input and 120 output tokens transfers **210 credits** on the 0.8B model or a browser worker, **420 credits** on a 2B, 4B, or 9B model, and **630 credits** on a 27B or larger model. Contribution level does not set the rate. Actual tool-call generation is included in runtime token usage. An initial refundable reservation covers the configured context ceiling plus output limit at that rate; unused credits are returned at settlement. The maximum authorization is 52,224 credits, which is 34,816 tokens at the 1.5 rate. A reservation is not the final price.
 
-New local accounts receive **10,000 starter credits**. Starter credits are promotional: they cannot be directly transferred or made withdrawable by self-service. Existing balances are preserved; database migration converts historical credit units without topping accounts up to the new grant amount. Browser pairing does not create another account or grant. A self-served request has no net balance cost and does not increase earned or backed balances.
+New local accounts receive **100,000 starter credits** (`STARTER_CREDITS` in `src/core/pricing.js`). Starter credits are promotional: they cannot be directly transferred or made withdrawable by self-service. Existing balances are preserved; database migration converts historical credit units without topping accounts up to the new grant amount. Browser pairing does not create another account or grant. A self-served request has no net balance cost and does not increase earned or backed balances.
 
 The [contracts](contracts/LLMesh.sol) implement an 18-decimal ERC-20. Internal accounting uses half-credit atoms so 0.5- and 1.5-credit rates are exact. **Metered model rates require escrow v5; v4 deployments are incompatible and are not upgraded automatically.** Contract grants and escrow are only available when operators explicitly configure compatible deployed contracts and funding. A local database migration does not mint tokens, and there is no supplied live deployment.
 
@@ -468,7 +466,7 @@ Verification uses no desktop mouse or keyboard automation: `npm test` covers rou
 
 Desktop startup opens **AI Companion** every time and automatically starts hardware setup and serving. Companion prefers an idle native model on this computer, even if another worker is faster. When local hardware is occupied or incompatible with the request, it can use another eligible hardware worker. Donated APIs and automatic abliterated selection remain excluded. Messages submitted during automatic model preparation can wait for setup within the request timeout.
 
-Desktop and headless CLI default to **free coordinator credits**. A local Nostr identity and 10,000-credit starter grant are created without signup, wallet funding, or gas. In Settings → Settlement, choose free credits or optional Base ERC-20 escrow. CLI uses `--settlement credits|base` or `LLMESH_SETTLEMENT`; the two balances remain separate. Requests reserve a maximum budget, settle actual metered usage on completion, and refund unused credits. Failed work earns no credits. Self-service has no net balance cost and does not increase earned or backed balances.
+Desktop and headless CLI default to **free coordinator credits**. A local Nostr identity and 100,000-credit starter grant are created without signup, wallet funding, or gas. In Settings → Settlement, choose free credits or optional Base ERC-20 escrow. CLI uses `--settlement credits|base` or `LLMESH_SETTLEMENT`; the two balances remain separate. Requests reserve a maximum budget, settle actual metered usage on completion, and refund unused credits. Failed work earns no credits. Self-service has no net balance cost and does not increase earned or backed balances.
 
 A free-credit coordinator immediately credits its selected worker in **that coordinator's ledger**. It sends a Nostr-signed earnings receipt over the authenticated encrypted mesh. The worker verifies that the receipt matches its completed model and token usage, stores it, acknowledges it, and shows the issuer balance under Token wallet. Pending receipts retry after reconnection; duplicate deliveries do not create additional earnings. These receipts are not added to the worker's separate local spendable balance. The issuing coordinator's API accepts that worker's Nostr identity for spending those earnings. Linked browser harvesting stays attached to its desktop account.
 
