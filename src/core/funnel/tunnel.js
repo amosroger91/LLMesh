@@ -18,6 +18,7 @@ export class FunnelTunnel extends EventEmitter {
     this.generation = 0;
     this.socket = null;
     this.publicUrl = null;
+    this.active = new Map();
     const library = tls ? https : http;
     this.agent = new library.Agent({ keepAlive: true, maxSockets: 8 });
   }
@@ -78,6 +79,12 @@ export class FunnelTunnel extends EventEmitter {
   }
 
   async onFrame(frame) {
+    if (frame?.type === 'cancel' && typeof frame.id === 'string') {
+      // The public client disconnected; stop the local request so inference is not wasted.
+      this.active.get(frame.id)?.destroy();
+      this.active.delete(frame.id);
+      return;
+    }
     if (frame?.type !== 'request' || typeof frame.id !== 'string' || frame.id.length > 80) return;
     this.emit('request');
     const fail = (status, message) => this.send({ type: 'error', id: frame.id, status, message: String(message).slice(0, 300) });
@@ -108,6 +115,8 @@ export class FunnelTunnel extends EventEmitter {
         response.on('end', () => this.send({ type: 'end', id: frame.id }));
         response.on('error', () => fail(502, 'Local API failed'));
       });
+      this.active.set(frame.id, req);
+      req.once('close', () => { if (this.active.get(frame.id) === req) this.active.delete(frame.id); });
       req.once('error', error => fail(502, error.message));
       req.once('timeout', () => { req.destroy(); fail(504, 'Local API timed out'); });
       req.end(body.length ? body : undefined);
@@ -119,6 +128,8 @@ export class FunnelTunnel extends EventEmitter {
     this.generation += 1;
     this.socket?.destroy();
     this.socket = null;
+    for (const req of this.active.values()) req.destroy();
+    this.active.clear();
     this.agent.destroy();
   }
 }

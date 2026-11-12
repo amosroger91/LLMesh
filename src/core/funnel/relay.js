@@ -26,7 +26,7 @@ function readBody(req) {
 }
 
 export class FunnelRelay extends EventEmitter {
-  constructor({ token = null, allow = [], publicBase = null, tls = null, maxSessions = 128, maxConcurrent = 8 } = {}) {
+  constructor({ token = null, allow = [], publicBase = null, tls = null, maxSessions = 128, maxConcurrent = 8, upgradeTimeoutMs = 30000 } = {}) {
     super();
     this.token = token || null;
     this.allow = allow;
@@ -34,6 +34,7 @@ export class FunnelRelay extends EventEmitter {
     this.tls = tls;
     this.maxSessions = maxSessions;
     this.maxConcurrent = maxConcurrent;
+    this.upgradeTimeoutMs = upgradeTimeoutMs;
     this.sessions = new Map();
     this.byEvent = new Map();
     this.byAddress = new Map();
@@ -47,6 +48,8 @@ export class FunnelRelay extends EventEmitter {
     this.sweep = setInterval(() => {
       const now = Date.now();
       for (const [id, expires] of this.byEvent) if (expires <= now) this.byEvent.delete(id);
+      // Forget addresses whose admission window has passed, so the map stays bounded.
+      for (const [remote, stamps] of this.byAddress) if (!stamps.some(stamp => now - stamp < 60000)) this.byAddress.delete(remote);
     }, 30000);
     this.sweep.unref?.();
   }
@@ -115,11 +118,16 @@ export class FunnelRelay extends EventEmitter {
     if (previous) this.drop(previous);
     const id = sessionId();
     const session = { id, pubkey, socket: null, pending: new Map(), parser: null };
+    // A session that never upgrades would otherwise hold a slot forever and
+    // let anyone who can sign an announcement fill the relay.
+    session.upgradeTimer = setTimeout(() => { if (this.sessions.get(id) === session && !session.socket) this.drop(session); }, this.upgradeTimeoutMs);
+    session.upgradeTimer.unref?.();
     this.sessions.set(id, session);
     this.json(res, 201, { v: 1, session: id, publicUrl: `${this.origin}/f/${id}`, tunnel: '/v1/funnel/tunnel', pubkey });
   }
 
   drop(session) {
+    clearTimeout(session.upgradeTimer);
     for (const pending of session.pending.values()) {
       clearTimeout(pending.timer);
       if (!pending.res.headersSent) this.json(pending.res, 502, { error: { message: 'Funnel node disconnected' } });
@@ -139,6 +147,7 @@ export class FunnelRelay extends EventEmitter {
     const id = req.headers.authorization?.startsWith('Funnel ') ? req.headers.authorization.slice(7) : '';
     const session = this.sessions.get(id);
     if (!session || session.socket) return fail(401, 'Unknown funnel session');
+    clearTimeout(session.upgradeTimer);
     session.socket = socket;
     socket.setNoDelay(true);
     socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: llmesh-funnel\r\nConnection: Upgrade\r\n\r\n');
@@ -155,9 +164,20 @@ export class FunnelRelay extends EventEmitter {
     if (!session?.socket || session.socket.destroyed) return this.json(res, 503, { error: { message: 'Funnel node is offline' } });
     if (session.pending.size >= this.maxConcurrent) return this.json(res, 429, { error: { message: 'Funnel node is busy' } });
     const body = await readBody(req);
+    if (!session.socket || session.socket.destroyed || this.sessions.get(routed.session) !== session) return this.json(res, 503, { error: { message: 'Funnel node is offline' } });
+    if (session.pending.size >= this.maxConcurrent) return this.json(res, 429, { error: { message: 'Funnel node is busy' } });
     const id = randomUUID();
     const pending = { res, timer: setTimeout(() => this.finish(session, id, 504, 'Funnel request timed out'), 190000) };
     session.pending.set(id, pending);
+    res.once('close', () => {
+      // Still pending after the response closed means the client went away.
+      // Free the slot, tell the node to stop work, and resume a tunnel paused for this client.
+      if (session.pending.get(id) !== pending) return;
+      clearTimeout(pending.timer);
+      session.pending.delete(id);
+      if (pending.paused) { pending.paused = false; session.socket?.resume(); }
+      if (session.socket && !session.socket.destroyed) session.socket.write(encodeFrame({ type: 'cancel', id }));
+    });
     this.requests += 1;
     const written = session.socket.write(encodeFrame({
       type: 'request', id, method: req.method, path: routed.path, headers: filterRequestHeaders(req.headers), body: body.length ? body.toString('base64') : ''
