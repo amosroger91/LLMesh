@@ -22,6 +22,15 @@ export function openApi(base) {
   document.paths['/v1/swarm/completions']={post:{requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['tasks'],properties:{tasks:{type:'array',minItems:1,maxItems:32,items:{type:'object'}},max_concurrency:{type:'integer',minimum:1,maximum:16},stream:{type:'boolean'}}}}}},responses:{200:{description:'Ordered task results or indexed SSE events'}}}};
   return document;
 }
+const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+// True when this request may come from outside the machine: a non-loopback
+// peer, a relay tunnel, or any configured funnel (Tailscale and Cloudflare
+// connect from loopback, so the funnel setting is the reliable signal).
+export function publiclyReachable(service, req) {
+  if (!LOOPBACK_PEERS.has(req.socket?.remoteAddress ?? '')) return true;
+  if (req.headers?.['x-llmesh-funnel-url']) return true;
+  return (service.funnel?.status?.()?.provider ?? 'off') !== 'off';
+}
 function bearer(header, key) {
   const actual = Buffer.from(header?.startsWith('Bearer ') ? header.slice(7) : ''); const expected = Buffer.from(key);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
@@ -62,6 +71,10 @@ export async function startApi(service, { port = 7337, host = '127.0.0.1', tls }
           service.grants.check(pubkey, wallet, req.socket.remoteAddress ?? 'unknown');
           const voucher = await service.payments.voucher(pubkey, wallet);
           return json(200, await service.payments.relayVoucher(voucher));
+        }
+        if (!service.ledger.account(pubkey)?.granted && publiclyReachable(service, req)) {
+          try { service.grants.checkCredits(pubkey, req.socket.remoteAddress ?? 'unknown'); }
+          catch (e) { return error(403, e.message); }
         }
         return json(200, service.ledger.register(pubkey));
       }

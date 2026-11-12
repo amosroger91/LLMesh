@@ -16,3 +16,17 @@ test('grants require admission, bind accounts once, and rate limit repeat reques
     assert.equal(db.prepare('SELECT wallet FROM account_wallets WHERE pubkey=?').get(invited).wallet, wallet);
   } finally { db.close(); }
 });
+
+test('public credit grants follow the admission policy and rate limits', () => {
+  const db = new DatabaseSync(':memory:');
+  const owner = 'a'.repeat(64), invited = 'b'.repeat(64), stranger = 'c'.repeat(64);
+  try {
+    const admission = new GrantAdmission(db, { owner, allowed: [invited] });
+    assert.throws(() => admission.checkCredits(stranger, 'ip'), /not admitted/);
+    admission.checkCredits(owner, 'ip');
+    for (let i = 0; i < 5; i++) admission.checkCredits(invited, 'ip');
+    assert.throws(() => admission.checkCredits(invited, 'ip'), /rate limit/);
+    const open = new GrantAdmission(db, { owner, policy: 'open' });
+    open.checkCredits(stranger, 'other-ip');
+  } finally { db.close(); }
+});

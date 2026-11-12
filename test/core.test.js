@@ -96,3 +96,23 @@ test('signed API streams inference, settles credits and refunds failures', async
     assert.equal((await fetch(service.apiUrl + '/v1/account')).status, 401);
   } finally { server.closeAllConnections(); await new Promise(r => server.close(r)); await service.close(); rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('a published API does not mint starter credits for unknown keys', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'llmesh-grant-')); const secret = generateSecretKey();
+  const ollama = { installed: async () => [], close() {}, async *chat() {} };
+  const service = new Service({ directory, secret, network: false, ollama, requirePayments: false });
+  const server = await startApi(service, { port: 0 });
+  const register = client => {
+    const url = service.apiUrl + '/v1/accounts', raw = '{}';
+    return fetch(url, { method: 'POST', body: raw, headers: { Authorization: signAuth(client, url, 'POST', raw) } });
+  };
+  try {
+    const local = generateSecretKey();
+    assert.equal((await register(local)).status, 200);
+    service.funnel = { status: () => ({ provider: 'relay', state: 'verified' }), stop: async () => {} };
+    const stranger = generateSecretKey();
+    assert.equal((await register(stranger)).status, 403);
+    assert.equal(service.ledger.account(getPublicKey(stranger)), null);
+    assert.equal((await register(local)).status, 200);
+  } finally { server.closeAllConnections(); await new Promise(r => server.close(r)); await service.close(); rmSync(directory, { recursive: true, force: true }); }
+});
