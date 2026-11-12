@@ -394,7 +394,7 @@ export class Service extends EventEmitter {
           else if (route.worker === this.pubkey && this.payments.signRefund) payment.refundAuthorization = await this.payments.signRefund(payment);
           await this.payments.refund(payment);
         } catch (refundError) { error.message += `; escrow refund pending: ${refundError.message}. Payer can refund after the expiry/dispute window.`; }
-      } else if (id && !payment && !delivered) this.ledger.cancel(id);
+      } else if (id && !payment && !settled) this.ledger.cancel(id);
       throw error;
     }
     finally { if(route&&reservationHeld)this.releaseReservation(route); if (ownsPayment) this.paymentJobs.delete(payment.id); this.requests--; this.applyPending(); }

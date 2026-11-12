@@ -49,3 +49,18 @@ test('encrypted peers authenticate, stream jobs, reject untrusted coordinators a
     await assert.rejects(pending, /disconnected/);
   } finally { a.destroy(); b.destroy(); await coordinator.close(); await worker.close(); }
 });
+
+test('a send waiting for drain fails when the socket closes', async () => {
+  const mesh = new Mesh({ secret: generateSecretKey(), swarm: new TestSwarm(), describe: () => ({ models: [], busy: 0 }), run: async function* () {} });
+  try {
+    const socket = new EventEmitter();
+    socket.destroyed = false;
+    socket.write = () => false;
+    const sending = mesh.send({ socket }, { type: 'ping', id: 'x' });
+    socket.destroyed = true;
+    socket.emit('close');
+    await assert.rejects(sending, /disconnected/);
+    assert.equal(socket.listenerCount('drain'), 0);
+    assert.equal(socket.listenerCount('close'), 0);
+  } finally { await mesh.close(); }
+});

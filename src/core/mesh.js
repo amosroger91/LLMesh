@@ -3,7 +3,6 @@ import {nodeProfile} from '../shared/node-profile.js';
 import Hyperswarm from 'hyperswarm';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { once } from 'node:events';
 import { finalizeEvent, verifyEvent } from 'nostr-tools/pure';
 import { hash } from './identity.js';
 import { validateMessage } from './mesh-protocol.js';
@@ -27,8 +26,18 @@ export class Mesh extends EventEmitter {
     this.timer.unref();
   }
   async send(peer, message) {
-    if (peer.socket.destroyed) throw new Error('Worker disconnected');
-    if (!peer.socket.write(JSON.stringify(message) + '\n')) await once(peer.socket, 'drain');
+    const socket = peer.socket;
+    if (socket.destroyed) throw new Error('Worker disconnected');
+    if (socket.write(JSON.stringify(message) + '\n')) return;
+    // Waiting on 'drain' alone hangs forever if the socket closes first, which
+    // would pin an active job (and its worker slot) for the life of the process.
+    await new Promise((resolve, reject) => {
+      const done = () => { cleanup(); resolve(); };
+      const closed = () => { cleanup(); reject(new Error('Worker disconnected')); };
+      const cleanup = () => { socket.off('drain', done); socket.off('close', closed); socket.off('error', closed); };
+      socket.once('drain', done); socket.once('close', closed); socket.once('error', closed);
+      if (socket.destroyed) closed();
+    });
   }
   announce(peer, identityOnly = false) {
     const description = this.describe();
